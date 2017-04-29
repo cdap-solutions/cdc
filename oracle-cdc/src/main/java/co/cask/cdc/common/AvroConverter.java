@@ -25,11 +25,11 @@ import org.apache.avro.generic.GenericArray;
 import org.apache.avro.generic.GenericEnumSymbol;
 import org.apache.avro.generic.GenericFixed;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.commons.collections.map.HashedMap;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
@@ -171,7 +171,7 @@ public final class AvroConverter {
 
   private static Map<String, ?> convertAvroMap(Schema valueSchema,
                                                org.apache.avro.Schema avroValueSchema, Map<String, Object> map) {
-    Map<String, Object> result = new HashedMap(map.size());
+    Map<String, Object> result = new HashMap<>(map.size());
     for (Map.Entry<String, Object> entry : map.entrySet()) {
       map.put(entry.getKey(), fromAvroValue(valueSchema, avroValueSchema, entry.getValue()));
     }

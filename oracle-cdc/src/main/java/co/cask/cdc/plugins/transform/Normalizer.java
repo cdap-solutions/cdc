@@ -19,13 +19,16 @@ package co.cask.cdc.plugins.transform;
 import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
+import co.cask.cdap.api.common.Bytes;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.api.plugin.PluginConfig;
 import co.cask.cdap.etl.api.Emitter;
 import co.cask.cdap.etl.api.Transform;
 import co.cask.cdap.etl.api.TransformContext;
+import co.cask.cdap.format.StructuredRecordStringConverter;
 import co.cask.cdc.common.AvroConverter;
+import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Table;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -36,10 +39,9 @@ import org.apache.avro.io.DecoderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -72,6 +74,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
       schemaRegistryURL = context.getServiceURL(serviceId[0], serviceId[1]);
       schemaCache = HashBasedTable.create();
     */
+    schemaCache = HashBasedTable.create();
   }
 
   @Override
@@ -122,12 +125,12 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
       long schemaFingerPrint = SchemaNormalization.parsingFingerprint64(avroSchema);
       LOG.info("Populating Schema cache with namespace {}, tableName {}, and fingerPrint {}", namespaceName, tableName,
                schemaFingerPrint);
-      // TODO Should we put namespace name here???
-      schemaCache.put(tableName, schemaFingerPrint, avroSchema);
+      schemaCache.put(namespaceName + "." + tableName, schemaFingerPrint, avroSchema);
 
       StructuredRecord.Builder builder = StructuredRecord.builder(CDC_DDL_SCHEMA);
       builder.set("schema", messageBody);
-      emitter.emit(builder.build());
+      // TODO Do Not emit anything for now
+      // emitter.emit(builder.build());
       return;
     }
 
@@ -135,17 +138,20 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     org.apache.avro.Schema avroGenericWrapperSchema = getGenericWrapperSchema();
     GenericRecord genericRecord = getRecord(message, avroGenericWrapperSchema);
     // TODO Generic Avro wrapped message does not have namespace name.
-    String tableName = (String) genericRecord.get("table_name");
+    String tableName = genericRecord.get("table_name").toString();
     long schameHashId = (Long) genericRecord.get("schema_fingerprint");
-    byte[] payload = (byte[]) genericRecord.get("payload");
+    byte[] payload = genericRecord.get("payload") instanceof ByteBuffer
+      ? Bytes.toBytes((ByteBuffer) genericRecord.get("payload"))
+      : (byte[]) genericRecord.get("payload");
     LOG.info("Got tableName {} and fingerPrint {} in wrapped schema.", tableName, schameHashId);
     org.apache.avro.Schema avroSchema = schemaCache.get(tableName, schameHashId);
 
     StructuredRecord structuredRecord = AvroConverter.fromAvroRecord(getRecord(payload, avroSchema),
                                                                      AvroConverter.fromAvroSchema(avroSchema));
 
-    LOG.info("Emitting Structured Record {}", structuredRecord);
-    emitter.emit(structuredRecord);
+    LOG.info("Emitting Structured Record {}", StructuredRecordStringConverter.toJsonString(structuredRecord));
+    // TODO Do Not emit anything for now
+    // emitter.emit(structuredRecord);
   }
 
   private org.apache.avro.Schema getGenericWrapperSchema() {
@@ -169,8 +175,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
 
   private GenericRecord getRecord(byte[] message, org.apache.avro.Schema schema) throws IOException {
     GenericDatumReader<GenericRecord> datumReader = new GenericDatumReader<>(schema);
-    InputStream is = new ByteArrayInputStream(message);
-    return datumReader.read(null, DecoderFactory.get().binaryDecoder(is, null));
+    return datumReader.read(null, DecoderFactory.get().binaryDecoder(message, null));
   }
 
   public static class NormalizerConfig extends PluginConfig {
