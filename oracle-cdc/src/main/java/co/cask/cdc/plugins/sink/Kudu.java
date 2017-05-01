@@ -333,16 +333,21 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
       }
 
       Set<String> newColumns = new HashSet<>();
-      for (Schema.Field field : newSchema.getFields()) {
-        newColumns.add(field.getName());
+      Schema.Field beforeField = newSchema.getField("before");
+      for (Schema.Field field : beforeField.getSchema().getFields()) {
+        if (!field.getName().endsWith("_isMissing")) {
+          // This is a column in the db, add it to set
+          newColumns.add(field.getName());
+        }
       }
 
       if (newColumns.size() > oldColumns.size()) {
         // columns have been added
         newColumns.removeAll(oldColumns);
         for (String columnName : newColumns) {
-          Schema.Field newField = newSchema.getField(columnName);
+          Schema.Field newField = newSchema.getField("before").getSchema().getField(columnName);
           Type kuduType = toKuduType(columnName, newField.getSchema());
+          LOG.info("Adding column {} of type {} to the KuduTable.", columnName, kuduType);
           // add nullable column since we don't have default value?
           client.alterTable(table.getName(), new AlterTableOptions().addNullableColumn(columnName, kuduType));
           client.isAlterTableDone(table.getName());
@@ -351,6 +356,7 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
         oldColumns.removeAll(newColumns);
         // columns have been removed
         for (String columnName : oldColumns) {
+          LOG.info("Deleting column {}", columnName);
           client.alterTable(table.getName(), new AlterTableOptions().dropColumn(columnName));
           client.isAlterTableDone(table.getName());
         }
