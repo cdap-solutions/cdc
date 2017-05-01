@@ -38,6 +38,7 @@ import com.google.gson.Gson;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
+import org.apache.kudu.client.AlterTableOptions;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.Delete;
 import org.apache.kudu.client.Insert;
@@ -55,6 +56,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -318,6 +320,44 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
   @Override
   public void transform(StructuredRecord input, Emitter<KeyValue<NullWritable, Operation>> emitter) throws Exception {
     LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
+    if (input.getSchema().getRecordName().equals("DDLRecord")) {
+      String schemaString = input.get("schema");
+      Schema newSchema = Schema.parseJson(schemaString);
+
+      // Identified that it is a DDL Record - supports adding new columns, deleting columns
+      // TODO : Add support for renaming column (is it possible that two columns can be renamed in same DDLRecord?)
+      org.apache.kudu.Schema kuduTableSchema = table.getSchema();
+      Set<String> oldColumns = new HashSet<>();
+      for (ColumnSchema schema : kuduTableSchema.getColumns()) {
+        oldColumns.add(schema.getName());
+      }
+
+      Set<String> newColumns = new HashSet<>();
+      for (Schema.Field field : newSchema.getFields()) {
+        newColumns.add(field.getName());
+      }
+
+      if (newColumns.size() > oldColumns.size()) {
+        // columns have been added
+        newColumns.removeAll(oldColumns);
+        for (String columnName : newColumns) {
+          Schema.Field newField = newSchema.getField(columnName);
+          Type kuduType = toKuduType(columnName, newField.getSchema());
+          // add nullable column since we don't have default value?
+          client.alterTable(table.getName(), new AlterTableOptions().addNullableColumn(columnName, kuduType));
+          client.isAlterTableDone(table.getName());
+        }
+      } else {
+        oldColumns.removeAll(newColumns);
+        // columns have been removed
+        for (String columnName : oldColumns) {
+          client.alterTable(table.getName(), new AlterTableOptions().dropColumn(columnName));
+          client.isAlterTableDone(table.getName());
+        }
+      }
+      return;
+    }
+
     String operationType = input.get("op_type");
     switch (operationType) {
       case "I":
