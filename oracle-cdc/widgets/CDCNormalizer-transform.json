@@ -25,36 +25,65 @@
         "type": "record",
         "fields": [
           {
-            "name": "table",
-            "type": "string"
-          },
-          {
-            "name": "op_type",
-            "type": "string"
-          },
-          {
-            "name": "op_ts",
-            "type": "string"
-          },
-          {
-            "name": "current_ts",
-            "type": "string"
-          },
-          {
-            "name": "before",
-            "type": {
-              "type": "map",
-              "keys": "string",
-              "values": "string"
-            }
-          },
-          {
-            "name": "after",
-            "type": {
-              "type": "map",
-              "keys": "string",
-              "values": "string"
-            }
+            "name": "ChangedRecord",
+            "type": [
+              {
+                "type": "record",
+                "name": "DDLRecord",
+                "fields": [
+                  {
+                    "name": "table_name",
+                    "type": "string"
+                  },
+                  {
+                    "name": "schemaHashId",
+                    "type": "long"
+                  },
+                  {
+                    "name": "schema",
+                    "type": "string"
+                  }
+                ]
+              },
+              {
+                "type": "record",
+                "name": "DMLRecord",
+                "fields": [
+                  {
+                    "name": "table",
+                    "type": "string"
+                  },
+                  {
+                    "name": "op_type",
+                    "type": "string"
+                  },
+                  {
+                    "name": "op_ts",
+                    "type": "string"
+                  },
+                  {
+                    "name": "current_ts",
+                    "type": "string"
+                  },
+                  {
+                    "name": "before",
+                    "type": {
+                      "type": "map",
+                      "keys": "string",
+                      "values": "string"
+                    }
+                  },
+                  {
+                    "name": "after",
+                    "type": {
+                      "type": "map",
+                      "keys": "string",
+                      "values": "string"
+                    }
+                  }
+                ]
+              }
+            ]
           }
         ]
       }

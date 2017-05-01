@@ -53,6 +53,8 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
   private static Logger LOG = LoggerFactory.getLogger(Normalizer.class);
   private static Gson GSON = new Gson();
   private static final Schema CDC_DDL_SCHEMA = Schema.recordOf("DDLRecord",
+                                                               Schema.Field.of("table_name", Schema.of(Schema.Type.STRING)),
+                                                               Schema.Field.of("schemaHashId", Schema.of(Schema.Type.LONG)),
                                                                Schema.Field.of("schema", Schema.of(Schema.Type.STRING)));
 
   private final NormalizerConfig config;
@@ -125,10 +127,14 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
       long schemaFingerPrint = SchemaNormalization.parsingFingerprint64(avroSchema);
       LOG.info("Populating Schema cache with namespace {}, tableName {}, and fingerPrint {}", namespaceName, tableName,
                schemaFingerPrint);
+
+      String namespacedTableName = namespaceName + "." + tableName;
       schemaCache.put(namespaceName + "." + tableName, schemaFingerPrint, avroSchema);
 
       StructuredRecord.Builder builder = StructuredRecord.builder(CDC_DDL_SCHEMA);
+      builder.set("schemaHashId", schemaFingerPrint);
       builder.set("schema", messageBody);
+      builder.set("table_name", namespacedTableName);
       // TODO Do Not emit anything for now
       // emitter.emit(builder.build());
       return;

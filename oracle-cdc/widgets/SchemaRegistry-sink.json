@@ -1,0 +1,41 @@
+{
+  "metadata": {
+    "spec-version": "1.0"
+  },
+  "configuration-groups": [
+    {
+      "label": "Schema registry configuration",
+      "properties": [
+        {
+          "widget-type" : "textbox",
+          "label" : "Schema Registry",
+          "name" : "schemaRegistry",
+          "description" : "Name of the dataset containing schema registry."
+        }
+      ]
+    }
+  ],
+  "jump-config": {
+    "datasets": [{
+                   "ref-property-name": "schemaRegistry"
+                 }]
+  },
+  "outputs": [
+    {
+      "name": "schema",
+      "widget-type": "schema",
+      "widget-attributes": {
+        "schema-types": [
+          "boolean",
+          "int",
+          "long",
+          "float",
+          "double",
+          "bytes",
+          "string"
+        ],
+        "schema-default-type": "string"
+      }
+    }
+  ]
+}
