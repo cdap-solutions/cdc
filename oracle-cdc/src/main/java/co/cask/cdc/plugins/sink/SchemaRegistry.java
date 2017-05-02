@@ -21,6 +21,7 @@ import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.common.Bytes;
+import co.cask.cdap.api.data.batch.Output;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.dataset.DatasetProperties;
 import co.cask.cdap.api.dataset.lib.KeyValue;
@@ -62,6 +63,7 @@ public class SchemaRegistry extends BatchSink<StructuredRecord, byte[], Put>  {
     if (!context.datasetExists(config.schemaRegistry)) {
       context.createDataset(config.schemaRegistry, Table.class.getName(), DatasetProperties.EMPTY);
     }
+    context.addOutput(Output.ofDataset(config.schemaRegistry));
   }
 
   @Override

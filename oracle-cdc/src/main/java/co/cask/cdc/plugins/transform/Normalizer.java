@@ -136,7 +136,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
       builder.set("schema", messageBody);
       builder.set("table_name", namespacedTableName);
       // TODO Do Not emit anything for now
-      // emitter.emit(builder.build());
+      emitter.emit(builder.build());
       return;
     }
 
@@ -157,7 +157,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
 
     LOG.info("Emitting Structured Record {}", StructuredRecordStringConverter.toJsonString(structuredRecord));
     // TODO Do Not emit anything for now
-    // emitter.emit(structuredRecord);
+    emitter.emit(structuredRecord);
   }
 
   private org.apache.avro.Schema getGenericWrapperSchema() {

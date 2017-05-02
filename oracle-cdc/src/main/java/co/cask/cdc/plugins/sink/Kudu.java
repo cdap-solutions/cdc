@@ -29,12 +29,14 @@ import co.cask.cdap.etl.api.PipelineConfigurer;
 import co.cask.cdap.etl.api.batch.BatchRuntimeContext;
 import co.cask.cdap.etl.api.batch.BatchSink;
 import co.cask.cdap.etl.api.batch.BatchSinkContext;
+import co.cask.cdc.common.AvroConverter;
 import co.cask.cdc.common.KuduSinkConfig;
 import co.cask.cdc.common.TypeConversionException;
 import co.cask.hydrator.common.ReferenceBatchSink;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
@@ -322,8 +324,9 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
     LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
     if (input.getSchema().getRecordName().equals("DDLRecord")) {
       String schemaString = input.get("schema");
-      Schema newSchema = Schema.parseJson(schemaString);
-
+      LOG.info("Schema is {}", schemaString);
+      org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse(schemaString);
+      Schema newSchema = AvroConverter.fromAvroSchema(avroSchema);
       // Identified that it is a DDL Record - supports adding new columns, deleting columns
       // TODO : Add support for renaming column (is it possible that two columns can be renamed in same DDLRecord?)
       org.apache.kudu.Schema kuduTableSchema = table.getSchema();
@@ -331,21 +334,24 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
       for (ColumnSchema schema : kuduTableSchema.getColumns()) {
         oldColumns.add(schema.getName());
       }
+      LOG.info("OldColumns {}", oldColumns);
 
       Set<String> newColumns = new HashSet<>();
       Schema.Field beforeField = newSchema.getField("before");
-      for (Schema.Field field : beforeField.getSchema().getFields()) {
+      for (Schema.Field field : beforeField.getSchema().getNonNullable().getFields()) {
         if (!field.getName().endsWith("_isMissing")) {
           // This is a column in the db, add it to set
           newColumns.add(field.getName());
         }
       }
 
+      LOG.info("NewColumns {}", newColumns);
+
       if (newColumns.size() > oldColumns.size()) {
         // columns have been added
         newColumns.removeAll(oldColumns);
         for (String columnName : newColumns) {
-          Schema.Field newField = newSchema.getField("before").getSchema().getField(columnName);
+          Schema.Field newField = newSchema.getField("before").getSchema().getNonNullable().getField(columnName);
           Type kuduType = toKuduType(columnName, newField.getSchema());
           LOG.info("Adding column {} of type {} to the KuduTable.", columnName, kuduType);
           // add nullable column since we don't have default value?
@@ -368,26 +374,30 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
     switch (operationType) {
       case "I":
         Insert insert = table.newInsert();
-        Map<String, String> insertData = input.get("after");
-        for (Map.Entry<String, String> entry : insertData.entrySet()) {
-          insert.getRow().addString(entry.getKey(), entry.getValue());
+        StructuredRecord insertRecord = input.get("after");
+        for (Schema.Field field : insertRecord.getSchema().getFields()) {
+          if (!field.getName().endsWith("_isMissing")) {
+            insert.getRow().addString(field.getName(), (String) insertRecord.get(field.getName()));
+          }
         }
         emitter.emit(new KeyValue<NullWritable, Operation>(NullWritable.get(), insert));
         break;
       case "U":
         Update update = table.newUpdate();
-        Map<String, String> updateData = input.get("after");
-        for (Map.Entry<String, String> entry : updateData.entrySet()) {
-          update.getRow().addString(entry.getKey(), entry.getValue());
+        StructuredRecord updateRecord = input.get("after");
+        for (Schema.Field field : updateRecord.getSchema().getFields()) {
+          if (!field.getName().endsWith("_isMissing")) {
+            update.getRow().addString(field.getName(), (String) updateRecord.get(field.getName()));
+          }
         }
         emitter.emit(new KeyValue<NullWritable, Operation>(NullWritable.get(), update));
         break;
       case "D":
         Delete delete = table.newDelete();
-        Map<String, String> deleteData = input.get("before");
+        StructuredRecord deleteRecord = input.get("before");
         Set<String> keyColumns = kuduSinkConfig.getColumns();
         for (String keyColumn : keyColumns) {
-          delete.getRow().addString(keyColumn, deleteData.get(keyColumn));
+          delete.getRow().addString(keyColumn, (String) deleteRecord.get(keyColumn));
         }
         // for (Map.Entry<String, String> entry : deleteData.entrySet()) {
         //  delete.getRow().addString(entry.getKey(), entry.getValue());
