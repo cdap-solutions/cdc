@@ -35,6 +35,7 @@ import co.cask.cdc.common.TypeConversionException;
 import co.cask.hydrator.common.ReferenceBatchSink;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
+import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.apache.hadoop.io.NullWritable;
@@ -322,51 +323,9 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
   @Override
   public void transform(StructuredRecord input, Emitter<KeyValue<NullWritable, Operation>> emitter) throws Exception {
     LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
+
     if (input.getSchema().getRecordName().equals("DDLRecord")) {
-      String schemaString = input.get("schema");
-      LOG.info("Schema is {}", schemaString);
-      org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse(schemaString);
-      Schema newSchema = AvroConverter.fromAvroSchema(avroSchema);
-      // Identified that it is a DDL Record - supports adding new columns, deleting columns
-      // TODO : Add support for renaming column (is it possible that two columns can be renamed in same DDLRecord?)
-      org.apache.kudu.Schema kuduTableSchema = table.getSchema();
-      Set<String> oldColumns = new HashSet<>();
-      for (ColumnSchema schema : kuduTableSchema.getColumns()) {
-        oldColumns.add(schema.getName());
-      }
-      LOG.info("OldColumns {}", oldColumns);
-
-      Set<String> newColumns = new HashSet<>();
-      Schema.Field beforeField = newSchema.getField("before");
-      for (Schema.Field field : beforeField.getSchema().getNonNullable().getFields()) {
-        if (!field.getName().endsWith("_isMissing")) {
-          // This is a column in the db, add it to set
-          newColumns.add(field.getName());
-        }
-      }
-
-      LOG.info("NewColumns {}", newColumns);
-
-      if (newColumns.size() > oldColumns.size()) {
-        // columns have been added
-        newColumns.removeAll(oldColumns);
-        for (String columnName : newColumns) {
-          Schema.Field newField = newSchema.getField("before").getSchema().getNonNullable().getField(columnName);
-          Type kuduType = toKuduType(columnName, newField.getSchema());
-          LOG.info("Adding column {} of type {} to the KuduTable.", columnName, kuduType);
-          // add nullable column since we don't have default value?
-          client.alterTable(table.getName(), new AlterTableOptions().addNullableColumn(columnName, kuduType));
-          client.isAlterTableDone(table.getName());
-        }
-      } else {
-        oldColumns.removeAll(newColumns);
-        // columns have been removed
-        for (String columnName : oldColumns) {
-          LOG.info("Deleting column {}", columnName);
-          client.alterTable(table.getName(), new AlterTableOptions().dropColumn(columnName));
-          client.isAlterTableDone(table.getName());
-        }
-      }
+      updateKuduTableSchema(table, (String) input.get("schema"));
       return;
     }
 
@@ -377,7 +336,7 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
         StructuredRecord insertRecord = input.get("after");
         for (Schema.Field field : insertRecord.getSchema().getFields()) {
           if (!field.getName().endsWith("_isMissing")) {
-            insert.getRow().addString(field.getName(), (String) insertRecord.get(field.getName()));
+            addColumnDataBasedOnType(insert.getRow(), field, insertRecord.get(field.getName()));
           }
         }
         emitter.emit(new KeyValue<NullWritable, Operation>(NullWritable.get(), insert));
@@ -387,7 +346,7 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
         StructuredRecord updateRecord = input.get("after");
         for (Schema.Field field : updateRecord.getSchema().getFields()) {
           if (!field.getName().endsWith("_isMissing")) {
-            update.getRow().addString(field.getName(), (String) updateRecord.get(field.getName()));
+            addColumnDataBasedOnType(update.getRow(), field, updateRecord.get(field.getName()));
           }
         }
         emitter.emit(new KeyValue<NullWritable, Operation>(NullWritable.get(), update));
@@ -397,15 +356,103 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
         StructuredRecord deleteRecord = input.get("before");
         Set<String> keyColumns = kuduSinkConfig.getColumns();
         for (String keyColumn : keyColumns) {
-          delete.getRow().addString(keyColumn, (String) deleteRecord.get(keyColumn));
+          Schema.Field field = deleteRecord.getSchema().getField(keyColumn);
+          addColumnDataBasedOnType(delete.getRow(), field, deleteRecord.get(field.getName()));
         }
-        // for (Map.Entry<String, String> entry : deleteData.entrySet()) {
-        //  delete.getRow().addString(entry.getKey(), entry.getValue());
-        // }
         emitter.emit(new KeyValue<NullWritable, Operation>(NullWritable.get(), delete));
         break;
       default:
         throw new RuntimeException("Illegal operation type " + operationType);
+    }
+  }
+
+  private void addColumnDataBasedOnType(PartialRow row, Schema.Field field, Object value) throws TypeConversionException {
+    String columnName = field.getName();
+    Type type = toKuduType(field.getName(), field.getSchema());
+    switch (type) {
+      case STRING:
+        row.addString(columnName, (String) value);
+        break;
+      case INT32:
+        row.addInt(columnName, (int) value);
+        break;
+      case INT64:
+        row.addLong(columnName, (long) value);
+        break;
+      case BINARY:
+        if (value instanceof ByteBuffer) {
+          row.addBinary(columnName, (ByteBuffer) value);
+        } else {
+          row.addBinary(columnName, (byte[]) value);
+        }
+        break;
+      case DOUBLE:
+        row.addDouble(columnName, (double) value);
+        break;
+      case FLOAT:
+        row.addFloat(columnName, (float) value);
+        break;
+      case BOOL:
+        row.addBoolean(columnName, (boolean) value);
+        break;
+      default:
+        throw new RuntimeException(String.format("Unexpected Kudu type '%s' found.", type));
+    }
+  }
+
+  private void updateKuduTableSchema(KuduTable table, String schemaString) throws Exception {
+    LOG.info("Schema is {}", schemaString);
+    org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse(schemaString);
+    Schema newSchema = AvroConverter.fromAvroSchema(avroSchema);
+    // Identified that it is a DDL Record - supports adding new columns, deleting columns
+    // TODO : Add support for renaming column (is it possible that two columns can be renamed in same DDLRecord?)
+    org.apache.kudu.Schema kuduTableSchema = table.getSchema();
+    Set<String> oldColumns = new HashSet<>();
+    for (ColumnSchema schema : kuduTableSchema.getColumns()) {
+      oldColumns.add(schema.getName());
+    }
+    LOG.info("OldColumns {}", oldColumns);
+
+    Set<String> newColumns = new HashSet<>();
+    Schema.Field beforeField = newSchema.getField("before");
+    for (Schema.Field field : beforeField.getSchema().getNonNullable().getFields()) {
+      if (!field.getName().endsWith("_isMissing")) {
+        // This is a column in the db, add it to set
+        newColumns.add(field.getName());
+      }
+    }
+
+    LOG.info("NewColumns {}", newColumns);
+
+    Sets.SetView<String> columnDiff = Sets.symmetricDifference(newColumns, oldColumns);
+    Set<String> columnsToDelete = new HashSet<>();
+    Set<String> columnsToAdd = new HashSet<>();
+    for (String column : columnDiff) {
+      if (oldColumns.contains(column)) {
+        // This column is removed
+        columnsToDelete.add(column);
+      } else {
+        // This column is added
+        columnsToAdd.add(column);
+      }
+    }
+
+    AlterTableOptions alterTableOptions = new AlterTableOptions();
+    for (String column : columnsToDelete) {
+      alterTableOptions.dropColumn(column);
+      LOG.info("Deleting column {}", column);
+    }
+
+    for (String column : columnsToAdd) {
+      Schema.Field newField = newSchema.getField("before").getSchema().getNonNullable().getField(column);
+      Type kuduType = toKuduType(column, newField.getSchema());
+      alterTableOptions.addNullableColumn(column, kuduType);
+      LOG.info("Adding column {} of type {} to the KuduTable.", column, kuduType);
+    }
+
+    if (!(columnsToAdd.isEmpty() && columnsToDelete.isEmpty())) {
+      client.alterTable(table.getName(), alterTableOptions);
+      client.isAlterTableDone(table.getName());
     }
   }
 
