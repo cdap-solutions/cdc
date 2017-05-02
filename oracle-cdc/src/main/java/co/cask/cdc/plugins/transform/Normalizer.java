@@ -82,6 +82,8 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
   @Override
   public void transform(StructuredRecord input, Emitter<StructuredRecord> emitter) throws Exception {
     LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
+    LOG.info("SchemaCache size is {}", schemaCache.size());
+    LOG.info("Schema cache {}", schemaCache);
 
     byte[] message = input.get(config.getInputField());
     if (message == null) {
@@ -151,6 +153,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
       : (byte[]) genericRecord.get("payload");
     LOG.info("Got tableName {} and fingerPrint {} in wrapped schema.", tableName, schameHashId);
     org.apache.avro.Schema avroSchema = schemaCache.get(tableName, schameHashId);
+    LOG.info("Got avro schema {}", avroSchema);
 
     StructuredRecord structuredRecord = AvroConverter.fromAvroRecord(getRecord(payload, avroSchema),
                                                                      AvroConverter.fromAvroSchema(avroSchema));
@@ -180,6 +183,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
   }
 
   private GenericRecord getRecord(byte[] message, org.apache.avro.Schema schema) throws IOException {
+    LOG.info("Schema while getting record {}", schema);
     GenericDatumReader<GenericRecord> datumReader = new GenericDatumReader<>(schema);
     return datumReader.read(null, DecoderFactory.get().binaryDecoder(message, null));
   }
