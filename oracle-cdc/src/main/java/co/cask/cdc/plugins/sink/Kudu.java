@@ -37,11 +37,11 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Sets;
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.AlterTableOptions;
+import org.apache.kudu.client.AlterTableResponse;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.Delete;
 import org.apache.kudu.client.Insert;
@@ -325,7 +325,7 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
     LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
 
     if (input.getSchema().getRecordName().equals("DDLRecord")) {
-      updateKuduTableSchema(table, (String) input.get("schema"));
+      updateKuduTableSchema((String) input.get("schema"));
       return;
     }
 
@@ -400,7 +400,7 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
     }
   }
 
-  private void updateKuduTableSchema(KuduTable table, String schemaString) throws Exception {
+  private void updateKuduTableSchema(String schemaString) throws Exception {
     LOG.info("Schema is {}", schemaString);
     org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse(schemaString);
     Schema newSchema = AvroConverter.fromAvroSchema(avroSchema);
@@ -425,6 +425,7 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
     LOG.info("NewColumns {}", newColumns);
 
     Sets.SetView<String> columnDiff = Sets.symmetricDifference(newColumns, oldColumns);
+    LOG.info("Column Diff {}", columnDiff);
     Set<String> columnsToDelete = new HashSet<>();
     Set<String> columnsToAdd = new HashSet<>();
     for (String column : columnDiff) {
@@ -436,6 +437,8 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
         columnsToAdd.add(column);
       }
     }
+
+    LOG.info("Columns to add {} and Columns to delete {}", columnsToAdd, columnsToDelete);
 
     AlterTableOptions alterTableOptions = new AlterTableOptions();
     for (String column : columnsToDelete) {
@@ -451,9 +454,15 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
     }
 
     if (!(columnsToAdd.isEmpty() && columnsToDelete.isEmpty())) {
+      LOG.info("Altering table {}, {}",table.getName(), alterTableOptions);
       client.alterTable(table.getName(), alterTableOptions);
       client.isAlterTableDone(table.getName());
+      LOG.info("Alter table done!");
+      table = client.openTable(table.getName());
+      LOG.info("Columns after alter table {}", table.getSchema().getColumns());
     }
+
+    LOG.info("Returning!");
   }
 
   /**
