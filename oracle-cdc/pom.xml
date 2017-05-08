@@ -30,6 +30,7 @@
     <guava.version>19.0</guava.version>
     <hadoop.version>2.3.0</hadoop.version>
     <kudu.version>1.2.0-cdh5.10.0</kudu.version>
+    <cask.common.version>0.7.1</cask.common.version>
 
     <!-- These are the application template artifacts that this plugin will be available for. -->
     <app.parents>
@@ -52,6 +53,11 @@
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>co.cask.common</groupId>
+      <artifactId>common-http</artifactId>
+      <version>${cask.common.version}</version>
+    </dependency>
     <dependency>
       <groupId>co.cask.hydrator</groupId>
       <artifactId>hydrator-common</artifactId>

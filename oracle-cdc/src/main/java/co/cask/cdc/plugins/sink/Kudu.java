@@ -41,7 +41,6 @@ import org.apache.hadoop.io.NullWritable;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.AlterTableOptions;
-import org.apache.kudu.client.AlterTableResponse;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.Delete;
 import org.apache.kudu.client.Insert;
@@ -75,9 +74,6 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
   // Kudu client and table.
   private KuduClient client;
   private KuduTable table;
-
-  // Write schema associated with the pipeline.
-  private Schema outputSchema;
 
   public Kudu(KuduSinkConfig config) {
     super(config);
@@ -120,7 +116,6 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
   public void initialize(BatchRuntimeContext context) throws Exception {
     super.initialize(context);
     // Parsing the schema should never fail here, because configure has validated it.
-    outputSchema = kuduSinkConfig.getSchema();
     client = new KuduClient.KuduClientBuilder(kuduSinkConfig.getMasterAddress())
       .defaultOperationTimeoutMs(kuduSinkConfig.getOperationTimeout())
       .defaultAdminOperationTimeoutMs(kuduSinkConfig.getAdministrationTimeout())
@@ -168,12 +163,6 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
             String.format("Unable to create table '%s'. Reason : %s", kuduSinkConfig.getTableName(), e.getMessage())
           );
         }
-      } else {
-        // If the table exists in Kudu, compare the schema and make sure they are the same.
-        // If they are not the same then throw an exception.
-        KuduTable table = localClient.openTable(kuduSinkConfig.getTableName());
-        org.apache.kudu.Schema kuduSchema = table.getSchema();
-        checkSchemaCompatibility(kuduSchema, writeSchema);
       }
     } catch (KuduException e) {
       String msg = String.format("Unable to check if the table '%s' exists in kudu. Reason : %s",
@@ -188,53 +177,6 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
           localClient.close();
         } catch (KuduException e) {
           LOG.warn("Failed to close kudu client connection. {}", e.getMessage());
-        }
-      }
-    }
-  }
-
-  /**
-   * Checks if Kudu Schema for an existing table is same as the write schema specified by the pipeline.
-   *
-   * @param kuduSchema field of Kudu schema.
-   * @param writeSchema fields of pipeline schema.
-   */
-  private void checkSchemaCompatibility(org.apache.kudu.Schema kuduSchema, Schema writeSchema) {
-    if (kuduSchema.getColumns().size() != writeSchema.getFields().size()) {
-      throw new RuntimeException(
-        String.format("Kudu table schema and write schema do not have same number of columns. " +
-                        "Please fix schema and re-submit.")
-      );
-    }
-
-    // Iterate through all the field in the Kudu table.
-    for (org.apache.kudu.ColumnSchema kschema : kuduSchema.getColumns()) {
-      String kName = kschema.getName();
-      org.apache.kudu.Type kType = kschema.getType();
-
-      // Check if field name matches.
-      if (writeSchema.getField(kName) == null) {
-        throw new RuntimeException(
-          String.format("Kudu table '%s' has a field '%s' that does not exist in your write schema. Please" +
-                          "make the appropriate change and re-submit the pipeline.", kuduSinkConfig.optTableName,
-                        kName)
-        );
-      } else {
-        // If it matches, check if the type matches.
-        try {
-          if (!toKuduType(kName, writeSchema.getField(kName).getSchema()).equals(kType)) {
-            throw new RuntimeException(
-              String.format("Kudu table '%s' has a field '%s' that does not match the type in your write schema. " +
-                              "Please change the type of field '%s' and re-submit",
-                            kuduSinkConfig.getTableName(), kName, kName)
-            );
-          }
-        } catch (TypeConversionException e) {
-          throw new RuntimeException(
-            String.format("Kudu table '%s' has a field '%s' that has type that is not supported by kudu. Please" +
-                            "change the type of field '%s' to one supported by Kudu and re-submit",
-                          kuduSinkConfig.getTableName(), kName, kName)
-          );
         }
       }
     }
@@ -463,51 +405,6 @@ public class Kudu extends ReferenceBatchSink<StructuredRecord, NullWritable, Ope
     }
 
     LOG.info("Returning!");
-  }
-
-  /**
-   * Adds a field to the row from the {@link StructuredRecord}.
-   *
-   * @param row Kudu Row.
-   * @param name of the field.
-   * @param schema of the field.
-   * @param val to be added to the field.
-   */
-  private void createKuduRow(PartialRow row, String name, Schema schema, Object val) {
-    switch (schema.getType()) {
-      case BOOLEAN:
-        row.addBoolean(name, (Boolean) val);
-        break;
-      case INT:
-        row.addInt(name, (Integer) val);
-        break;
-      case LONG:
-        row.addLong(name, (Long) val);
-        break;
-      case FLOAT:
-        row.addFloat(name, (Float) val);
-        break;
-      case DOUBLE:
-        row.addDouble(name, (Double) val);
-        break;
-      case BYTES:
-        if (val instanceof ByteBuffer) {
-          row.addBinary(name, (ByteBuffer) val);
-        } else {
-          row.addBinary(name, (byte[]) val);
-        }
-        break;
-      case STRING:
-        row.addString(name, (String) val);
-        break;
-      case UNION: // Recursively drill down to find the type.
-        createKuduRow(row, name, schema.getNonNullable(), val);
-        break;
-      default:
-        throw new IllegalArgumentException(
-          "Field '" + name + "' is of unsupported type '" + schema.getType() + "' by Kudu."
-        );
-    }
   }
 
   /**

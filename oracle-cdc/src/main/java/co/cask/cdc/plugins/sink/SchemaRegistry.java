@@ -37,7 +37,7 @@ import co.cask.cdap.etl.api.batch.BatchSinkContext;
  * Sink used to write to the Schema registry
  */
 @Plugin(type = BatchSink.PLUGIN_TYPE)
-@Name("SchemaRegistry")
+@Name("SchemaRegistry1")
 @Description("Writes to the Schema registry")
 public class SchemaRegistry extends BatchSink<StructuredRecord, byte[], Put>  {
 
