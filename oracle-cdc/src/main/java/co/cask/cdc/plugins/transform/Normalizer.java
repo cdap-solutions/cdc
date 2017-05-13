@@ -28,10 +28,6 @@ import co.cask.cdap.etl.api.Transform;
 import co.cask.cdap.etl.api.TransformContext;
 import co.cask.cdap.format.StructuredRecordStringConverter;
 import co.cask.cdc.common.AvroConverter;
-import co.cask.common.http.HttpRequest;
-import co.cask.common.http.HttpRequests;
-import co.cask.common.http.HttpResponse;
-import com.google.common.base.Charsets;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.Table;
 import com.google.gson.Gson;
@@ -44,10 +40,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 /**
  *
@@ -64,8 +59,6 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
 
   private final NormalizerConfig config;
 
-  private URL schemaRegistryURL;
-
   private Table<String, Long, org.apache.avro.Schema> schemaCache;
 
   public Normalizer(NormalizerConfig config) {
@@ -75,10 +68,6 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
   @Override
   public void initialize(TransformContext context) throws Exception {
     super.initialize(context);
-    // TODO Get the schema from service
-
-    String[] serviceId = config.schemaServiceName.split(":");
-    schemaRegistryURL = context.getServiceURL(serviceId[0], serviceId[1]);
     schemaCache = HashBasedTable.create();
   }
 
@@ -88,7 +77,6 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     LOG.info("SchemaCache size is {}", schemaCache.size());
     LOG.info("Schema cache {}", schemaCache);
 
-    LOG.info("Schema Registry URL: {}", schemaRegistryURL);
     byte[] message = input.get(config.getInputField());
     if (message == null) {
       throw new IllegalStateException(String.format("Input record does not contain the field '%s'.",
@@ -97,7 +85,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
 
     String messageBody = new String(message, StandardCharsets.UTF_8);
 
-    LOG.info("XXX Received message body is {}", messageBody);
+    LOG.info("Normalizer received message body {}", messageBody);
     if (messageBody.contains("generic_wrapper") && messageBody.contains("oracle.goldengate")) {
       // Current message is the schema of generic AVRO wrapper. Can be ignored.
       /*
@@ -136,7 +124,6 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
 
       String namespacedTableName = namespaceName + "." + tableName;
       schemaCache.put(namespaceName + "." + tableName, schemaFingerPrint, avroSchema);
-      putSchema(namespacedTableName, schemaFingerPrint, messageBody);
       StructuredRecord.Builder builder = StructuredRecord.builder(CDC_DDL_SCHEMA);
       builder.set("schemaHashId", schemaFingerPrint);
       builder.set("schema", messageBody);
@@ -146,6 +133,12 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     }
 
     // Current message is the Wrapped Avro binary message
+    // Get the Schema map
+
+    StructuredRecord cacheRecord = input.get("staterecord");
+    Map<Long, String> cacheMap = cacheRecord.get("data");
+    LOG.info("Cache map is {}", cacheMap);
+
     org.apache.avro.Schema avroGenericWrapperSchema = getGenericWrapperSchema();
     GenericRecord genericRecord = getRecord(message, avroGenericWrapperSchema);
     String tableName = genericRecord.get("table_name").toString();
@@ -156,7 +149,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     LOG.info("Got tableName {} and fingerPrint {} in wrapped schema.", tableName, schameHashId);
     org.apache.avro.Schema avroSchema = schemaCache.get(tableName, schameHashId);
     if (avroSchema == null) {
-      avroSchema = new org.apache.avro.Schema.Parser().parse(getSchema(tableName, schameHashId));
+      avroSchema = new org.apache.avro.Schema.Parser().parse(cacheMap.get(schameHashId));
       LOG.info("Avro Schema is {}", avroSchema);
     }
     LOG.info("Got avro schema {}", avroSchema);
@@ -193,36 +186,10 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     return datumReader.read(null, DecoderFactory.get().binaryDecoder(message, null));
   }
 
-  private void putSchema(String tableId, long schemaId, String schema) throws Exception {
-    URL putURL = new URL(schemaRegistryURL, "tables/" + tableId + "/schemas/" + schemaId);
-    LOG.info("Calling PUT endpoint {}", putURL);
-    HttpURLConnection connection = (HttpURLConnection) putURL.openConnection();
-    try {
-      connection.setDoOutput(true);
-      connection.setRequestMethod("PUT");
-      connection.getOutputStream().write(schema.getBytes(Charsets.UTF_8));
-      LOG.info("Connection response code {}", connection.getResponseCode());
-    } finally {
-      connection.disconnect();
-    }
-  }
-
-  private String getSchema(String tableId, long schemaId) throws Exception {
-    URL getURL = new URL(schemaRegistryURL, "tables/" + tableId + "/schemas/" + schemaId);
-    LOG.info("Calling GET endpoint {}", getURL);
-    HttpRequest request = HttpRequest.get(getURL).build();
-    HttpResponse response = HttpRequests.execute(request);
-    return response.getResponseBodyAsString();
-  }
-
   public static class NormalizerConfig extends PluginConfig {
     @Name("inputField")
     @Description("Input field containing the payload of the message. Defaults to 'message'.")
     private String inputField;
-
-    @Name("schemaServiceName")
-    @Description("Name of the schema registry service. Name should be in the form of <application_name>:<service_name>")
-    private String schemaServiceName;
 
     public NormalizerConfig(String inputField) {
       this.inputField = inputField;
