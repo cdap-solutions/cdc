@@ -1,8 +1,27 @@
+/*
+ * Copyright © 2017 Cask Data, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+
 package co.cask.cdc.plugins.sink;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
+import com.google.common.base.Joiner;
 import com.google.common.base.Throwables;
+import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.apache.hadoop.conf.Configuration;
@@ -21,10 +40,15 @@ import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Database output format
@@ -48,7 +72,6 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
 
     public DatabaseRecordWriter(Connection connection, String tableName) throws SQLException {
       this.connection = connection;
-      this.connection.setAutoCommit(false);
       this.map = new HashMap<>();
       this.tableName = tableName;
     }
@@ -93,10 +116,60 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
     public void write(DatabaseRecord record, NullWritable nullWritable) throws IOException {
       try {
         StructuredRecord input = record.getRecord();
-        LOG.info("#### Got message {}", GSON.toJson(input));
-
         if (input.getSchema().getRecordName().equals("DDLRecord")) {
-          // TODO support DDL operations
+          Statement selectStatement = connection.createStatement();
+          ResultSet rs = selectStatement.executeQuery(String.format("SELECT TOP 1 * FROM %s", tableName));
+          ResultSetMetaData resultSetMetadata = rs.getMetaData();
+
+          Set<String> oldColumns = new HashSet<>();
+          // JDBC driver column indices start with 1
+          for (int i = 0; i < rs.getMetaData().getColumnCount(); i++) {
+            String name = resultSetMetadata.getColumnName(i + 1);
+            oldColumns.add(name);
+          }
+          selectStatement.close();
+
+          org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse((String) input.get("schema"));
+          Schema newSchema = AvroConverter.fromAvroSchema(avroSchema);
+          Schema.Field beforeField = newSchema.getField("before");
+          Set<String> newColumns = new HashSet<>();
+          Map<String,  Schema> newColumnsMap = new HashMap<>();
+          for (Schema.Field field : beforeField.getSchema().getNonNullable().getFields()) {
+            if (!field.getName().endsWith("_isMissing")) {
+              // This is a column in the db, add it to set
+              newColumns.add(field.getName());
+              newColumnsMap.put(field.getName(), field.getSchema());
+            }
+          }
+
+          Sets.SetView<String> columnDiff = Sets.symmetricDifference(newColumns, oldColumns);
+          LOG.info("Column Diff {}", columnDiff);
+          Set<String> columnsToDelete = new HashSet<>();
+          Set<String> columnsToAdd = new HashSet<>();
+          for (String column : columnDiff) {
+            if (oldColumns.contains(column)) {
+              // This column is removed
+              columnsToDelete.add(column);
+            } else {
+              // This column is added
+              columnsToAdd.add(column);
+            }
+          }
+
+          if (!columnsToAdd.isEmpty()) {
+            newColumnsMap.keySet().retainAll(columnsToAdd);
+          } else {
+            newColumnsMap.clear();
+          }
+
+          LOG.info("Columns to add {} and Columns to delete {}", columnsToAdd, columnsToDelete);
+
+          if (!columnDiff.isEmpty()) {
+            alterTable(connection, tableName, newColumnsMap, columnsToDelete);
+          }
+
+          // Update cached prepared statements
+          map.clear();
           return;
         }
 
@@ -114,7 +187,7 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
             } else {
               preparedStatement = map.get("I");
               record.write(preparedStatement);
-              preparedStatement.addBatch();
+              preparedStatement.executeUpdate();
             }
             break;
           case "U":
@@ -128,7 +201,7 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
             } else {
               preparedStatement = map.get("U");
               record.write(preparedStatement);
-              preparedStatement.addBatch();
+              preparedStatement.executeUpdate();
             }
             break;
           case "D":
@@ -141,7 +214,7 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
             } else {
               preparedStatement = map.get("D");
               record.write(preparedStatement);
-              preparedStatement.addBatch();
+              preparedStatement.executeUpdate();
             }
             break;
           case "T":
@@ -154,16 +227,82 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
             } else {
               preparedStatement = map.get("T");
               // do not need to add any field values in truncate statement, just add it to batch for execution
-              preparedStatement.addBatch();
+              preparedStatement.executeUpdate();
             }
             break;
           default:
             throw new RuntimeException("Illegal operation type " + operationType);
 
         }
-      } catch (SQLException e) {
+      } catch (Exception e) {
         e.printStackTrace();
+        throw new IOException(e);
       }
+    }
+  }
+
+  private void alterTable(Connection connection, String tableName, Map<String, Schema> columnsToAdd,
+                          Set<String> columnsToDelete) throws SQLException {
+    // drop columns
+    if (!columnsToDelete.isEmpty()) {
+      String dropColumns = "ALTER TABLE " + tableName + " DROP COLUMN " + Joiner.on(", ").join(columnsToDelete);
+      LOG.info("### Alter drop query is: {}", dropColumns);
+      executeStatement(connection, dropColumns);
+    }
+
+    // add columns
+    String alterQuery = "ALTER TABLE " + tableName + " ADD ";
+    for (Map.Entry<String, Schema> columnToAdd : columnsToAdd.entrySet()) {
+      try {
+         alterQuery = alterQuery + columnToAdd.getKey() + " " +
+           toDatabaseType(columnToAdd.getKey(), columnToAdd.getValue());
+      } catch (TypeConversionException e) {
+        throw new SQLException(e);
+      }
+    }
+
+    if (!columnsToAdd.isEmpty()) {
+      LOG.info("### Alter add query is: {}", alterQuery);
+      executeStatement(connection, alterQuery);
+    }
+  }
+
+  private void executeStatement(Connection connection, String dropColumns) throws SQLException {
+    PreparedStatement preparedStatement = null;
+    try {
+      preparedStatement = connection.prepareStatement(dropColumns);
+      preparedStatement.executeUpdate();
+      connection.commit();
+    } finally {
+      if (preparedStatement != null) {
+          preparedStatement.close();
+      }
+    }
+  }
+
+  private String toDatabaseType(String name, Schema schema) throws TypeConversionException {
+    Schema.Type type = schema.getType();
+    if (type == Schema.Type.STRING) {
+      return "VARCHAR(255)";
+    } else if (type == Schema.Type.INT) {
+      return "INTEGER";
+    } else if (type == Schema.Type.LONG) {
+      return "BIGINT";
+    } else if (type == Schema.Type.BYTES) {
+      return "BINARY";
+    } else if (type == Schema.Type.DOUBLE) {
+      return "DOUBLE";
+    } else if (type == Schema.Type.FLOAT) {
+      return "FLOAT";
+    } else if (type == Schema.Type.BOOLEAN) {
+      return "BOOLEAN";
+    } else if (type == Schema.Type.UNION) { // Recursively drill down into the non-nullable type.
+      return toDatabaseType(name, schema.getNonNullable());
+    } else {
+      throw new TypeConversionException(
+        String.format("Field '%s' is having a type '%s' that is not supported by Database Sink. Please change the " +
+                        "type.", name, type.toString())
+      );
     }
   }
 
@@ -308,7 +447,7 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
                                                  conf.get(DBConfiguration.PASSWORD_PROPERTY));
       }
 
-      connection.setAutoCommit(false);
+      connection.setAutoCommit(true);
       connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
     } catch (Exception e) {
       throw Throwables.propagate(e);

@@ -1,3 +1,19 @@
+/*
+ * Copyright © 2017 Cask Data, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
 package co.cask.cdc.plugins.sink;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
@@ -64,40 +80,34 @@ public class DatabaseRecord implements Writable, DBWritable, Configurable {
     switch (operationType) {
       case "I":
         StructuredRecord insertRecord = record.get("after");
-        int i = 1;
         for (Schema.Field field : insertRecord.getSchema().getFields()) {
           if (!field.getName().endsWith("_isMissing")) {
             String fieldName = field.getName();
             Schema.Type fieldType = getNonNullableType(field);
             Object fieldValue = insertRecord.get(fieldName);
             addValuesInDataOutput(out, fieldType, fieldValue);
-            i++;
           }
         }
         break;
       case "U":
         StructuredRecord updateRecord = record.get("after");
-        i = 1;
         for (Schema.Field field : updateRecord.getSchema().getFields()) {
           if (!field.getName().endsWith("_isMissing")) {
             String fieldName = field.getName();
             Schema.Type fieldType = getNonNullableType(field);
             Object fieldValue = updateRecord.get(fieldName);
             addValuesInDataOutput(out, fieldType, fieldValue);
-            i++;
           }
         }
         break;
       case "D":
         StructuredRecord deleteRecord = record.get("before");
-        i = 1;
         for (Schema.Field field : deleteRecord.getSchema().getFields()) {
           if (!field.getName().endsWith("_isMissing")) {
             String fieldName = field.getName();
             Schema.Type fieldType = getNonNullableType(field);
             Object fieldValue = deleteRecord.get(fieldName);
             addValuesInDataOutput(out, fieldType, fieldValue);
-            i++;
           }
         }
         break;

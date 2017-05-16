@@ -104,14 +104,11 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
   @Override
   public void initialize(BatchRuntimeContext context) throws Exception {
     super.initialize(context);
-    LOG.info("###### In initialize()");
   }
 
   @Override
   public void transform(StructuredRecord input, Emitter<KeyValue<DatabaseRecord, NullWritable>> emitter)
     throws Exception {
-    LOG.info("###### In transform(), record: {}", GSON.toJson(input));
-
     // emit the structured record as is, DatabaseRecordWriter will make sure correct prepared statements are created
     // and DatabaseRecord will make sure correct values are filled in.
     emitter.emit(new KeyValue<>(new DatabaseRecord(input), NullWritable.get()));
@@ -125,7 +122,6 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
     createTable();
     // make sure that the table exists
     context.addOutput(Output.of(config.referenceName, new DBOutputFormatProvider(config)));
-    LOG.info("###### In prepareRun()");
   }
 
 
