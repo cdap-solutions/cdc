@@ -188,7 +188,6 @@ public class DatabaseRecord implements Writable, DBWritable, Configurable {
 
     switch (fieldType) {
       case STRING:
-        // clob can also be written to as setString
         stmt.setString(sqlIndex, (String) fieldValue);
         break;
       case BOOLEAN:
@@ -218,7 +217,6 @@ public class DatabaseRecord implements Writable, DBWritable, Configurable {
 
     switch (fieldType) {
       case STRING:
-        // write string appropriately
         out.writeUTF((String) fieldValue);
         break;
       case BOOLEAN:

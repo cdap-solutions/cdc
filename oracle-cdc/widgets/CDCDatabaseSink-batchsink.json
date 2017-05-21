@@ -25,6 +25,11 @@
           "widget-type": "textbox",
           "label": "Table Name",
           "name": "tableName"
+        },
+        {
+          "widget-type": "textarea",
+          "label": "Create Table Query",
+          "name": "query"
         }
       ]
     },

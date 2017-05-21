@@ -32,16 +32,15 @@ import co.cask.cdap.etl.api.batch.BatchSinkContext;
 import co.cask.hydrator.common.ReferenceBatchSink;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapred.lib.db.DBConfiguration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.Driver;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Map;
@@ -53,11 +52,8 @@ import java.util.Map;
 @Name("CDCDatabaseSink")
 @Description("Writes to database table using jdbc.")
 public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseRecord, NullWritable> {
-  private static final Logger LOG = LoggerFactory.getLogger(DatabaseSink.class);
   static final String JDBC_DRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver";
-  private static final Gson GSON = new GsonBuilder()
-    .registerTypeAdapter(StructuredRecord.class, new StructuredRecordSerializer())
-    .create();
+
   private final DatabaseSinkConfig config;
 
   public DatabaseSink(DatabaseSinkConfig config) {
@@ -90,15 +86,33 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
         Object driver = Class.forName(JDBC_DRIVER).newInstance();
         DriverManager.registerDriver((Driver) driver);
         Connection connection = DriverManager.getConnection(config.connectionString, config.user, config.password);
+        if (verifyIfTableExists(connection)) {
+          connection.close();
+          return;
+        }
         Statement statement = connection.createStatement();
+        if (Strings.isNullOrEmpty(config.query)) {
+          throw new IllegalArgumentException(String.format("Table %s does not exist. Please create it by providing " +
+                                                             "create query", config.tableName));
+        }
         statement.execute(config.query);
         statement.close();
         connection.close();
         DriverManager.deregisterDriver((Driver) driver);
       } catch (Exception e) {
-        // TODO - handle the exception
+        throw new IllegalArgumentException(String.format("Exception while creating table %s: ", config.tableName), e);
       }
     }
+  }
+
+  private boolean verifyIfTableExists(Connection connection) throws SQLException {
+    DatabaseMetaData md = connection.getMetaData();
+    ResultSet rs = md.getTables(null, null, config.tableName, null);
+    if (rs.next()) {
+      // table already exists, so log a warning and return
+      return true;
+    }
+    return false;
   }
 
   @Override
@@ -109,7 +123,7 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
   @Override
   public void transform(StructuredRecord input, Emitter<KeyValue<DatabaseRecord, NullWritable>> emitter)
     throws Exception {
-    // emit the structured record as is, DatabaseRecordWriter will make sure correct prepared statements are created
+    // emit the structured record as is, DatabaseOutputFormat will make sure correct prepared statements are created
     // and DatabaseRecord will make sure correct values are filled in.
     emitter.emit(new KeyValue<>(new DatabaseRecord(input), NullWritable.get()));
   }

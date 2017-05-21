@@ -22,8 +22,6 @@ import co.cask.cdap.api.data.schema.Schema;
 import com.google.common.base.Joiner;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Sets;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.Job;
@@ -56,10 +54,6 @@ import java.util.Set;
 public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWritable> {
   private static final Logger LOG = LoggerFactory.getLogger(DatabaseOutputFormat.class);
   private Object driver;
-  private static final Gson GSON = new GsonBuilder()
-    .registerTypeAdapter(StructuredRecord.class, new StructuredRecordSerializer())
-    .create();
-
 
   public class DatabaseRecordWriter extends RecordWriter<DatabaseRecord,NullWritable> {
 
@@ -87,10 +81,24 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
     /** {@inheritDoc} */
     public void close(TaskAttemptContext context) throws IOException {
       try {
+        commitDML();
+        for (PreparedStatement statement : map.values()) {
+          statement.close();
+        }
+        map.clear();
+        connection.close();
+      } catch (SQLException e) {
+        LOG.warn(StringUtils.stringifyException(e));
+        throw new IOException(e);
+      }
+    }
+
+    private void commitDML() throws IOException {
+      try {
         for (PreparedStatement statement : map.values()) {
           statement.executeBatch();
-          connection.commit();
         }
+        connection.commit();
       } catch (SQLException e) {
         try {
           connection.rollback();
@@ -99,16 +107,6 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
           LOG.warn(StringUtils.stringifyException(ex));
         }
         throw new IOException(e);
-      } finally {
-        try {
-          for (PreparedStatement statement : map.values()) {
-            statement.close();
-            connection.close();
-          }
-        }
-        catch (SQLException ex) {
-          throw new IOException(ex);
-        }
       }
     }
 
@@ -116,8 +114,10 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
     public void write(DatabaseRecord record, NullWritable nullWritable) throws IOException {
       try {
         StructuredRecord input = record.getRecord();
+
         if (input.getSchema().getRecordName().equals("DDLRecord")) {
           Statement selectStatement = connection.createStatement();
+          // get first record from the table to get existing table schema
           ResultSet rs = selectStatement.executeQuery(String.format("SELECT TOP 1 * FROM %s", tableName));
           ResultSetMetaData resultSetMetadata = rs.getMetaData();
 
@@ -129,6 +129,7 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
           }
           selectStatement.close();
 
+          // make change to schema
           org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse((String) input.get("schema"));
           Schema newSchema = AvroConverter.fromAvroSchema(avroSchema);
           Schema.Field beforeField = newSchema.getField("before");
@@ -143,7 +144,6 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
           }
 
           Sets.SetView<String> columnDiff = Sets.symmetricDifference(newColumns, oldColumns);
-          LOG.info("Column Diff {}", columnDiff);
           Set<String> columnsToDelete = new HashSet<>();
           Set<String> columnsToAdd = new HashSet<>();
           for (String column : columnDiff) {
@@ -162,20 +162,19 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
             newColumnsMap.clear();
           }
 
-          LOG.info("Columns to add {} and Columns to delete {}", columnsToAdd, columnsToDelete);
+          LOG.debug("Columns to add {} and Columns to delete {}", columnsToAdd, columnsToDelete);
 
           if (!columnDiff.isEmpty()) {
-            alterTable(connection, tableName, newColumnsMap, columnsToDelete);
+            commitDML();
+            alterTable(newColumnsMap, columnsToDelete);
+            // Clear map of prepared statements so that new statements are generated as per new schema
+            map.clear();
           }
-
-          // Update cached prepared statements
-          map.clear();
           return;
         }
 
         String operationType = input.get("op_type");
         PreparedStatement preparedStatement;
-        LOG.info("#### Operation type {}", operationType);
         switch (operationType) {
           case "I":
             if (!map.containsKey("I")) {
@@ -186,9 +185,9 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
               map.put("I", preparedStatement);
             } else {
               preparedStatement = map.get("I");
-              record.write(preparedStatement);
-              preparedStatement.executeUpdate();
             }
+            record.write(preparedStatement);
+            preparedStatement.addBatch();
             break;
           case "U":
             if (!map.containsKey("U")) {
@@ -200,9 +199,9 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
               map.put("U", preparedStatement);
             } else {
               preparedStatement = map.get("U");
-              record.write(preparedStatement);
-              preparedStatement.executeUpdate();
             }
+            record.write(preparedStatement);
+            preparedStatement.addBatch();
             break;
           case "D":
             if (!map.containsKey("D")) {
@@ -213,9 +212,9 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
               map.put("D", preparedStatement);
             } else {
               preparedStatement = map.get("D");
-              record.write(preparedStatement);
-              preparedStatement.executeUpdate();
             }
+            record.write(preparedStatement);
+            preparedStatement.addBatch();
             break;
           case "T":
             if (!map.containsKey("T")) {
@@ -226,56 +225,55 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
               map.put("T", preparedStatement);
             } else {
               preparedStatement = map.get("T");
-              // do not need to add any field values in truncate statement, just add it to batch for execution
-              preparedStatement.executeUpdate();
             }
+            // do not need to add any field values in truncate statement, just add it to batch for execution
+            preparedStatement.addBatch();
             break;
           default:
             throw new RuntimeException("Illegal operation type " + operationType);
-
         }
       } catch (Exception e) {
         e.printStackTrace();
         throw new IOException(e);
       }
     }
-  }
 
-  private void alterTable(Connection connection, String tableName, Map<String, Schema> columnsToAdd,
-                          Set<String> columnsToDelete) throws SQLException {
-    // drop columns
-    if (!columnsToDelete.isEmpty()) {
-      String dropColumns = "ALTER TABLE " + tableName + " DROP COLUMN " + Joiner.on(", ").join(columnsToDelete);
-      LOG.info("### Alter drop query is: {}", dropColumns);
-      executeStatement(connection, dropColumns);
-    }
-
-    // add columns
-    String alterQuery = "ALTER TABLE " + tableName + " ADD ";
-    for (Map.Entry<String, Schema> columnToAdd : columnsToAdd.entrySet()) {
-      try {
-         alterQuery = alterQuery + columnToAdd.getKey() + " " +
-           toDatabaseType(columnToAdd.getKey(), columnToAdd.getValue());
-      } catch (TypeConversionException e) {
-        throw new SQLException(e);
+    private void alterTable(Map<String, Schema> columnsToAdd, Set<String> columnsToDelete) throws SQLException {
+      // add columns
+      String alterQuery = "ALTER TABLE " + tableName + " ADD ";
+      String prefix = "";
+      for (Map.Entry<String, Schema> columnToAdd : columnsToAdd.entrySet()) {
+        try {
+          alterQuery = alterQuery + prefix + columnToAdd.getKey() + " " +
+            toDatabaseType(columnToAdd.getKey(), columnToAdd.getValue());
+          prefix = ", ";
+        } catch (TypeConversionException e) {
+          throw new SQLException(e);
+        }
       }
-    }
 
-    if (!columnsToAdd.isEmpty()) {
-      LOG.info("### Alter add query is: {}", alterQuery);
-      executeStatement(connection, alterQuery);
-    }
-  }
+      if (!columnsToAdd.isEmpty()) {
+        executeDDL(alterQuery);
+      }
 
-  private void executeStatement(Connection connection, String dropColumns) throws SQLException {
-    PreparedStatement preparedStatement = null;
-    try {
-      preparedStatement = connection.prepareStatement(dropColumns);
-      preparedStatement.executeUpdate();
+      // drop columns
+      if (!columnsToDelete.isEmpty()) {
+        String dropColumns = "ALTER TABLE " + tableName + " DROP COLUMN " + Joiner.on(", ").join(columnsToDelete);
+        executeDDL(dropColumns);
+      }
+      // commit both the updates to the table
       connection.commit();
-    } finally {
-      if (preparedStatement != null) {
+    }
+
+    private void executeDDL(String query) throws SQLException {
+      PreparedStatement preparedStatement = null;
+      try {
+        preparedStatement = connection.prepareStatement(query);
+        preparedStatement.executeUpdate();
+      } finally {
+        if (preparedStatement != null) {
           preparedStatement.close();
+        }
       }
     }
   }
@@ -338,8 +336,6 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
       }
     }
     query.append(")");
-
-    LOG.info("### INSERT query created is: {}", query.toString());
     return query.toString();
   }
 
@@ -374,7 +370,6 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
       query.append(primaryKeys.get(i)).append(" = ?");
     }
 
-    LOG.info("### UPDATE query created is: {}", query.toString());
     return query.toString();
   }
 
@@ -397,13 +392,10 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
         }
       }
     }
-    LOG.info("### Delete query created is: {}", query.toString());
     return query.toString();
   }
 
-  /** {@inheritDoc} */
-  public RecordWriter<DatabaseRecord,NullWritable> getRecordWriter(TaskAttemptContext context)
-    throws IOException {
+  public RecordWriter<DatabaseRecord,NullWritable> getRecordWriter(TaskAttemptContext context) throws IOException {
     DBConfiguration dbConf = new DBConfiguration(context.getConfiguration());
     String tableName = dbConf.getOutputTableName();
 
@@ -411,7 +403,6 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
       Connection connection = getConnection(context.getConfiguration());
       return new DatabaseRecordWriter(connection, tableName);
     } catch (Exception ex) {
-      LOG.error("#### Error occurred for table: {}", tableName, ex);
       throw new IOException(ex.getMessage());
     }
   }
@@ -447,7 +438,7 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
                                                  conf.get(DBConfiguration.PASSWORD_PROPERTY));
       }
 
-      connection.setAutoCommit(true);
+      connection.setAutoCommit(false);
       connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
     } catch (Exception e) {
       throw Throwables.propagate(e);
