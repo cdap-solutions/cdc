@@ -77,7 +77,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
 
     // check that CDC is enabled on the database and the given table
     checkCDCEnabled(connection, CDCElement.DATABASE, conf.dbName);
-    checkCDCEnabled(connection, CDCElement.DATABASE, conf.dbName);
+    checkCDCEnabled(connection, CDCElement.TABLE, conf.tableName);
 
     // get the capture instance detail of the the given table. We need this because this contains information about
     // the cdc table like its name and captured columns
