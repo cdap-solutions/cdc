@@ -20,12 +20,20 @@ public class Test {
   public static void main(String[] args) {
     try {
       Class.forName(SQLServerDriver.class.getName());
-      String url = "jdbc:sqlserver://35.184.27.192:1433;DatabaseName=cdctest";
+      String url = "jdbc:sqlserver://35.184.27.192:1433;DatabaseName=cdcttwo";
       Connection conn = DriverManager.getConnection(url, "sa", "Realtime!23");
-      showCDC(conn, "rs");
+      String tone = getPrimaryKeyName(conn, "tone");
+      System.out.printf("pk: " + tone);
     } catch (Exception e) {
       e.printStackTrace();
     }
+  }
+
+  private static String getPrimaryKeyName(Connection connection, String tableName) throws SQLException {
+    Statement statement = connection.createStatement();
+    ResultSet resultSet = statement.executeQuery("sp_pkeys " + tableName);
+    resultSet.next();
+    return resultSet.getString("COLUMN_NAME");
   }
 
   private static void showCDC(Connection connection, String name) throws SQLException, IOException {

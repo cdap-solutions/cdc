@@ -13,7 +13,6 @@ import com.microsoft.sqlserver.jdbc.SQLServerDriver;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.rdd.JdbcRDD;
 import org.apache.spark.streaming.api.java.JavaDStream;
-import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Serializable;
@@ -85,7 +84,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     CaptureInstanceDetail captureInstanceDetails = getCaptureInstanceDetails(connection, conf.tableName);
     LOG.info("The captured instance details {} for table {}", captureInstanceDetails, conf.tableName);
 
-    JavaRDD<StructuredRecord> rdd = getChangeData(streamingContext, captureInstanceDetails.captureInstanceName);
+    JavaRDD<StructuredRecord> rdd = getChangeData(streamingContext, captureInstanceDetails);
     ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
 
     return JavaDStream.fromDStream(new SQLInputDstream(streamingContext.getSparkStreamingContext().ssc(), tag,
@@ -122,18 +121,16 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     final List<String> indexColumnList; // name of index columns of the table being tracked
     final List<String> capturedColumnList; // name of all the captured columns of the table being tracked
     final int objectId; // an unique identifier for the change table
+    final String primaryKeyName;
 
     CaptureInstanceDetail(String captureInstanceName, boolean supportNetChanges, String indexColumnList,
-                          String capturedColumnList, int objectId) {
+                          String capturedColumnList, int objectId, String primaryKeyName) {
       this.captureInstanceName = captureInstanceName;
       this.supportNetChanges = supportNetChanges;
       this.indexColumnList = getList(indexColumnList);
       this.capturedColumnList = getList(capturedColumnList);
       this.objectId = objectId;
-    }
-
-    private List<String> getList(String s) {
-      return Arrays.asList(s.split("\\s*,\\s*"));
+      this.primaryKeyName = primaryKeyName;
     }
 
     @Override
@@ -144,56 +141,82 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
         ", indexColumnList=" + indexColumnList +
         ", capturedColumnList=" + capturedColumnList +
         ", objectId=" + objectId +
+        ", primaryKeyName='" + primaryKeyName + '\'' +
         '}';
+    }
+
+    private List<String> getList(String s) {
+      return Arrays.asList(s.split("\\s*,\\s*"));
     }
   }
 
   private CaptureInstanceDetail getCaptureInstanceDetails(Connection connection, String name) throws SQLException {
     Statement statement = connection.createStatement();
     ResultSet rs = statement.executeQuery("EXEC sys.sp_cdc_help_change_data_capture");
+    String primaryKeyName = getPrimaryKeyName(connection, name);
+
     while (rs.next()) {
       if (rs.getString("source_table").equalsIgnoreCase(name)) {
         return new CaptureInstanceDetail(rs.getString("capture_instance"), rs.getBoolean("supports_net_changes"), rs
-          .getString("index_column_list"), rs.getString("captured_column_list"), rs.getInt("object_id"));
+          .getString("index_column_list"), rs.getString("captured_column_list"), rs.getInt("object_id"), primaryKeyName);
       }
     }
     throw new RuntimeException(String.format("Capture instance not found for table %s", name));
   }
 
-  private JavaRDD<StructuredRecord> getChangeData(StreamingContext streamingContext, String captureTableName) {
+  private JavaRDD<StructuredRecord> getChangeData(StreamingContext streamingContext, CaptureInstanceDetail captureInstanceDetail) {
 
     SQLServerConnection dbConnection = new SQLServerConnection(getConnectionString(), conf.username, conf.password);
-    String stmt = "SELECT * FROM cdc.fn_cdc_get_all_changes_"+ captureTableName +"(sys.fn_cdc_get_min_lsn('" +
-      captureTableName + "'), sys.fn_cdc_get_max_lsn(), 'all') WHERE ? = ?";
+    String stmt = "SELECT * FROM cdc.fn_cdc_get_all_changes_" + captureInstanceDetail.captureInstanceName + "(sys.fn_cdc_get_min_lsn('" +
+      captureInstanceDetail.captureInstanceName + "'), sys.fn_cdc_get_max_lsn(), 'all') WHERE ? = ?";
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
     JdbcRDD<StructuredRecord> jdbcRDD =
       new JdbcRDD<>(streamingContext.getSparkStreamingContext().sparkContext().sc(), dbConnection, stmt, 1,
-                    1, 1, new MapResult(), ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
+                    1, 1, new MapResult(captureInstanceDetail), ClassManifestFactory$.MODULE$.fromClass
+        (StructuredRecord.class));
 
     return JavaRDD.fromRDD(jdbcRDD, ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }
 
+  private String getPrimaryKeyName(Connection connection, String tableName) throws SQLException {
+    //TODO: this will not be true in all cases. It is possible to enable cdc on a table without primary key in which
+    // an unique index key can be specified. Change this to support the later case
+    Statement statement = connection.createStatement();
+    ResultSet resultSet = statement.executeQuery("sp_pkeys " + tableName);
+    resultSet.next();
+    return resultSet.getString("COLUMN_NAME");
+  }
+
   static class MapResult extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
+    final CaptureInstanceDetail captureInstanceDetail;
+
+    MapResult(CaptureInstanceDetail captureInstanceDetail) {
+      this.captureInstanceDetail = captureInstanceDetail;
+    }
+
     public StructuredRecord apply(ResultSet row) {
       try {
-        return resultSetToStructureRecord(row);
+        return resultSetToStructureRecord(row, captureInstanceDetail.primaryKeyName);
       } catch (SQLException e) {
         throw new RuntimeException(e);
       }
     }
   }
 
-  static StructuredRecord resultSetToStructureRecord(ResultSet resultSet) throws SQLException {
+  static StructuredRecord resultSetToStructureRecord(ResultSet resultSet, String primaryKeyName) throws SQLException {
     ResultSetMetaData metadata = resultSet.getMetaData();
     List<Schema.Field> schemaFields = DBUtils.getSchemaFields(resultSet);
+    schemaFields.add(Schema.Field.of("primaryKey", Schema.of(Schema.Type
+                                                               .STRING)));
     Schema schema = Schema.recordOf("dbRecord", schemaFields);
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
-    for (int i = 0; i < schemaFields.size(); i++) {
+    for (int i = 0; i < schemaFields.size() - 1; i++) {
       Schema.Field field = schemaFields.get(i);
       int sqlColumnType = metadata.getColumnType(i + 1);
       recordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
     }
+    recordBuilder.set("primaryKey", primaryKeyName);
     return recordBuilder.build();
   }
 

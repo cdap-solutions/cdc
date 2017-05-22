@@ -39,6 +39,13 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     StructuredRecord.Builder recordBuilder;
     StructuredRecord record;
     switch (operation) {
+      case 1:
+        // delete
+        recordBuilder = getInsertRecord(input);
+        record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "D").build();
+        LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
+        emitter.emit(record);
+        break;
       case 2:
         // insert
         recordBuilder = getInsertRecord(input);
@@ -61,12 +68,6 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
         LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
         emitter.emit(record);
         break;
-      case 1:
-        // delete
-        recordBuilder = getInsertRecord(input);
-        record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "D").build();
-        LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
-        emitter.emit(record);
       default:
         throw new IllegalArgumentException("Unknown type" + operation);
 
@@ -96,8 +97,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(cdcSchema);
     recordBuilder
       .set(TABLE_NAME_SCHEMA_FIELD.getName(), "singleTable")
-
-      .set("innerRecord", innerRecordBuilder.build()).build();
+      .set("innerRecord", innerRecordBuilder.build());
     return recordBuilder;
   }
 }
