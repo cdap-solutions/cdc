@@ -24,11 +24,12 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
   private static Logger LOG = LoggerFactory.getLogger(Normalizer.class);
   private static Gson GSON = new Gson();
 
-  private static Set<String> DDL_SYSTEM_FIELD = Sets.newHashSet("__$start_lsn", "__$seqval", "__$operation",
+  private static final Set<String> DDL_SYSTEM_FIELD = Sets.newHashSet("__$start_lsn", "__$seqval", "__$operation",
                                                                 "__$update_mask");
 
-  private static Schema.Field TABLE_NAME_SCHEMA_FIELD = Schema.Field.of("tablename", Schema.of(Schema.Type.STRING));
-  private static Schema.Field OP_TYPE_SCHEMA_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
+  private static final Schema.Field TABLE_NAME_SCHEMA_FIELD = Schema.Field.of("tablename", Schema.of(Schema.Type
+                                                                                                      .STRING));
+  private static final Schema.Field OP_TYPE_SCHEMA_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
 
 
   @Override

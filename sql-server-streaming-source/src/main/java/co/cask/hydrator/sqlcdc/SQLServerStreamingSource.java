@@ -7,6 +7,7 @@ import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.etl.api.streaming.StreamingContext;
 import co.cask.cdap.etl.api.streaming.StreamingSource;
 import com.microsoft.sqlserver.jdbc.SQLServerDriver;
+import org.apache.spark.api.java.function.Function;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,9 +70,21 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
 
     ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
 
-    return JavaDStream.fromDStream(new CDCInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
-                                                       getConnectionString(), conf.username, conf.password,
-                                                       captureInstanceDetails), tag);
+    JavaDStream<StructuredRecord> structuredRecordJavaDStream =
+      JavaDStream.fromDStream(new CDCInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
+                                                  getConnectionString(), conf.username, conf.password,
+                                                  captureInstanceDetails), tag);
+
+    structuredRecordJavaDStream.map(new Function<StructuredRecord, StructuredRecord>() {
+      @Override
+      public StructuredRecord call(StructuredRecord v1) throws Exception {
+        System.out.println("### Printing lsn " + v1.get("__$start_lsn"));
+        return v1;
+      }
+    });
+
+
+    return structuredRecordJavaDStream;
   }
 
   private String getConnectionString() {
@@ -98,7 +111,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     }
   }
 
-  public class CaptureInstanceDetail implements Serializable {
+  class CaptureInstanceDetail implements Serializable {
     final String captureInstanceName; // the change table name
     final boolean supportNetChanges; // whether the cdc is enabled to support net changes
     final List<String> indexColumnList; // name of index columns of the table being tracked
@@ -141,7 +154,8 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     while (rs.next()) {
       if (rs.getString("source_table").equalsIgnoreCase(name)) {
         return new CaptureInstanceDetail(rs.getString("capture_instance"), rs.getBoolean("supports_net_changes"), rs
-          .getString("index_column_list"), rs.getString("captured_column_list"), rs.getInt("object_id"), primaryKeyName);
+          .getString("index_column_list"), rs.getString("captured_column_list"), rs.getInt("object_id"),
+                                         primaryKeyName);
       }
     }
     throw new RuntimeException(String.format("Capture instance not found for table %s", name));

@@ -60,4 +60,12 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1, new ResultSetToStructureRecord(),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }
+
+  public static String bytesToHex(byte[] in) {
+    final StringBuilder builder = new StringBuilder();
+    for (byte b : in) {
+      builder.append(String.format("%02x", b));
+    }
+    return builder.toString();
+  }
 }
