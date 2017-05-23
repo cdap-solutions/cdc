@@ -7,19 +7,13 @@ import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.etl.api.streaming.StreamingContext;
 import co.cask.cdap.etl.api.streaming.StreamingSource;
-import co.cask.hydrator.plugin.DBUtils;
-import com.google.common.base.Throwables;
 import com.microsoft.sqlserver.jdbc.SQLServerDriver;
-import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.rdd.JdbcRDD;
+import org.apache.spark.api.java.function.Function;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Serializable;
-import scala.reflect.ClassManifestFactory$;
 import scala.reflect.ClassTag;
-import scala.runtime.AbstractFunction0;
-import scala.runtime.AbstractFunction1;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -29,13 +23,11 @@ import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Properties;
 import javax.annotation.Nullable;
 
 @Plugin(type = StreamingSource.PLUGIN_TYPE)
@@ -84,11 +76,27 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     CaptureInstanceDetail captureInstanceDetails = getCaptureInstanceDetails(connection, conf.tableName);
     LOG.info("The captured instance details {} for table {}", captureInstanceDetails, conf.tableName);
 
-    JavaRDD<StructuredRecord> rdd = getChangeData(streamingContext, captureInstanceDetails);
-    ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
+//    JavaRDD<StructuredRecord> rdd = getChangeData(streamingContext, captureInstanceDetails);
+    ClassTag<Object[]> tag = scala.reflect.ClassTag$.MODULE$.apply(Object[].class);
 
-    return JavaDStream.fromDStream(new SQLInputDstream(streamingContext.getSparkStreamingContext().ssc(), tag,
-                                                       rdd.rdd()), tag);
+//    JavaDStream<Object[]> resultSetJavaDStream = JavaDStream.fromDStream(new MyDBInputStream(streamingContext
+//                                                                                        .getSparkStreamingContext()
+//                                                                                               .ssc(),
+//                                                                                              getConnectionString(), conf.username, conf.password,
+//                                                                                             streamingContext
+//                                                                                               .getSparkStreamingContext().sparkContext().sc()), tag);
+    JavaDStream<Object[]> resultSetJavaDStream = JavaDStream.fromDStream(new SQLInputDstream(streamingContext.getSparkStreamingContext().ssc(), tag,
+                                                getConnectionString(), conf.username, conf.password,
+                                                captureInstanceDetails), tag);
+
+    System.out.println("### count " + resultSetJavaDStream.count());
+
+    return resultSetJavaDStream.map(new Function<Object[], StructuredRecord>() {
+      @Override
+      public StructuredRecord call(Object[] v1) throws Exception {
+        return resultSetToStructureRecord(v1);
+      }
+    });
   }
 
   private String getConnectionString() {
@@ -115,7 +123,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     }
   }
 
-  class CaptureInstanceDetail implements Serializable {
+  public class CaptureInstanceDetail implements Serializable {
     final String captureInstanceName; // the change table name
     final boolean supportNetChanges; // whether the cdc is enabled to support net changes
     final List<String> indexColumnList; // name of index columns of the table being tracked
@@ -164,20 +172,6 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     throw new RuntimeException(String.format("Capture instance not found for table %s", name));
   }
 
-  private JavaRDD<StructuredRecord> getChangeData(StreamingContext streamingContext, CaptureInstanceDetail captureInstanceDetail) {
-
-    SQLServerConnection dbConnection = new SQLServerConnection(getConnectionString(), conf.username, conf.password);
-    String stmt = "SELECT * FROM cdc.fn_cdc_get_all_changes_" + captureInstanceDetail.captureInstanceName + "(sys.fn_cdc_get_min_lsn('" +
-      captureInstanceDetail.captureInstanceName + "'), sys.fn_cdc_get_max_lsn(), 'all') WHERE ? = ?";
-
-    //TODO Currently we are not partitioning the data. We should partition it for scalability
-    JdbcRDD<StructuredRecord> jdbcRDD =
-      new JdbcRDD<>(streamingContext.getSparkStreamingContext().sparkContext().sc(), dbConnection, stmt, 1,
-                    1, 1, new MapResult(captureInstanceDetail), ClassManifestFactory$.MODULE$.fromClass
-        (StructuredRecord.class));
-
-    return JavaRDD.fromRDD(jdbcRDD, ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
-  }
 
   private String getPrimaryKeyName(Connection connection, String tableName) throws SQLException {
     //TODO: this will not be true in all cases. It is possible to enable cdc on a table without primary key in which
@@ -188,36 +182,35 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     return resultSet.getString("COLUMN_NAME");
   }
 
-  static class MapResult extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
-    final CaptureInstanceDetail captureInstanceDetail;
+//  static class MapResult extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
+//    final SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail;
+//
+//    MapResult(SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail) {
+//      this.captureInstanceDetail = captureInstanceDetail;
+//    }
+//
+//    public StructuredRecord apply(ResultSet row) {
+//      try {
+//        return resultSetToStructureRecord(row);
+//      } catch (SQLException e) {
+//        throw new RuntimeException(e);
+//      }
+//    }
+//  }
 
-    MapResult(CaptureInstanceDetail captureInstanceDetail) {
-      this.captureInstanceDetail = captureInstanceDetail;
-    }
-
-    public StructuredRecord apply(ResultSet row) {
-      try {
-        return resultSetToStructureRecord(row, captureInstanceDetail.primaryKeyName);
-      } catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-    }
-  }
-
-  static StructuredRecord resultSetToStructureRecord(ResultSet resultSet, String primaryKeyName) throws SQLException {
-    ResultSetMetaData metadata = resultSet.getMetaData();
-    List<Schema.Field> schemaFields = DBUtils.getSchemaFields(resultSet);
-    schemaFields.add(Schema.Field.of("primaryKey", Schema.of(Schema.Type
-                                                               .STRING)));
-    Schema schema = Schema.recordOf("dbRecord", schemaFields);
-    StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
-    for (int i = 0; i < schemaFields.size() - 1; i++) {
-      Schema.Field field = schemaFields.get(i);
-      int sqlColumnType = metadata.getColumnType(i + 1);
-      recordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
-    }
-    recordBuilder.set("primaryKey", primaryKeyName);
-    return recordBuilder.build();
+  static StructuredRecord resultSetToStructureRecord(Object[] resultSet) throws SQLException {
+//    ResultSetMetaData metadata = resultSet.getMetaData();
+//    List<Schema.Field> schemaFields = DBUtils.getSchemaFields(resultSet);
+//    Schema schema = Schema.recordOf("dbRecord", schemaFields);
+//    StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
+//    for (int i = 0; i < schemaFields.size() - 1; i++) {
+//      Schema.Field field = schemaFields.get(i);
+//      int sqlColumnType = metadata.getColumnType(i + 1);
+//      recordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
+//    }
+//    return recordBuilder.build();
+    Schema schema = Schema.recordOf("someSchema", Schema.Field.of("op_type", Schema.of(Schema.Type.STRING)));
+    return StructuredRecord.builder(schema).set("op_type", "sc").build();
   }
 
   //TODO: This function is taken from DatabaseSource. We should move it to the DBUtil class in Datasbase plugin and
@@ -271,30 +264,5 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
       }
     }
     return original;
-  }
-
-  public class SQLServerConnection extends AbstractFunction0<Connection> implements Serializable {
-    private String connectionUrl;
-    private String userName;
-    private String password;
-
-    SQLServerConnection(String connectionUrl, String userName, String password) {
-      this.connectionUrl = connectionUrl;
-      this.userName = userName;
-      this.password = password;
-    }
-
-    @Override
-    public Connection apply() {
-      try {
-        Class.forName(SQLServerDriver.class.getName());
-        Properties properties = new Properties();
-        properties.setProperty("user", userName);
-        properties.setProperty("password", password);
-        return DriverManager.getConnection(connectionUrl, properties);
-      } catch (Exception e) {
-        throw Throwables.propagate(e);
-      }
-    }
   }
 }

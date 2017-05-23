@@ -17,26 +17,25 @@
 
 package co.cask.hydrator.sqlcdc
 
-import co.cask.cdap.api.dataset.table.Row
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.{JdbcRDD, RDD}
 import org.apache.spark.streaming.dstream.InputDStream
 import org.apache.spark.streaming.{StreamingContext, Time}
 
 /**
- * An InputDStream that periodically refreshes its contents. Each interval, it simply returns the table state
- * since the last refresh.
- *
- * @param sec the CDAP spark execution context
- * @param ssc the Spark streaming context
- * @param name the table name
- */
-class TableInputDStream(ssc: StreamingContext,
-                        connection: String,
-                        username: String,
-                        password: String,
-                        @transient var sparkContext: SparkContext)
-  extends InputDStream[(Array[Byte], Row)](ssc: StreamingContext) {
+  * An InputDStream that periodically refreshes its contents. Each interval, it simply returns the table state
+  * since the last refresh.
+  *
+  * @param sec  the CDAP spark execution context
+  * @param ssc  the Spark streaming context
+  * @param name the table name
+  */
+class MyDBInputStream(ssc: StreamingContext,
+                      connection: String,
+                      username: String,
+                      password: String,
+                      @transient var sparkContext: SparkContext)
+  extends InputDStream[Array[Object]](ssc: StreamingContext) {
 
   override def start(): Unit = {
     // no-op
@@ -45,18 +44,18 @@ class TableInputDStream(ssc: StreamingContext,
   override def stop(): Unit = {
   }
 
-  override def compute(validTime: Time): Option[RDD[(Array[Byte], Row)]] = {
+  override def compute(validTime: Time): Option[RDD[Array[Object]]] = {
 
-    Some(table)
+    Some(changeData())
   }
 
-  def getChangeData(): Unit = {
-    val dbConnection = new SQLInputDstream#SQLServerConnection(connection, username, password)
-    val tableName = "tone";
+  def changeData(): RDD[Array[Object]] = {
+    val dbConnection = new SQLServerConnection(connection, username, password)
+    val tableName = "dbo_tone"
     val stmt = "SELECT * FROM cdc.fn_cdc_get_all_changes_" + tableName + "(sys.fn_cdc_get_min_lsn('" + tableName +
       "'), sys.fn_cdc_get_max_lsn(), 'all') WHERE ? = ?"
     //TODO Currently we are not partitioning the data. We should partition it for scalability
 
-    new JdbcRDD[Array[AnyRef]](sparkContext, dbConnection, stmt, 1, 1, 1)
+    new JdbcRDD[Array[Object]](sparkContext, dbConnection, stmt, 1, 1, 1)
   }
 }

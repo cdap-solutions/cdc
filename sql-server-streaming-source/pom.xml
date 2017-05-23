@@ -30,6 +30,7 @@
     <spark.version>1.6.1</spark.version>
     <cdap.version>4.2.0-SNAPSHOT</cdap.version>
     <hydrator.plugins.version>1.6.0</hydrator.plugins.version>
+    <hadoop.version>2.3.0</hadoop.version>
     <!-- properties for script build step that creates the config files for the artifacts -->
     <widgets.dir>widgets</widgets.dir>
     <docs.dir>docs</docs.dir>
@@ -50,6 +51,11 @@
   </repositories>
 
   <dependencies>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client</artifactId>
+      <version> ${hadoop.version}</version>
+    </dependency>
     <dependency>
       <groupId>co.cask.cdap</groupId>
       <artifactId>cdap-etl-api</artifactId>
@@ -113,12 +119,6 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-sql_2.10</artifactId>
-      <version>${spark.version}</version>
-      <scope>provided</scope>
-    </dependency>
-    <dependency>
       <groupId>com.microsoft.sqlserver</groupId>
       <artifactId>mssql-jdbc</artifactId>
       <version>6.1.0.jre7</version>
@@ -136,7 +136,7 @@
     <dependency>
       <groupId>co.cask.cdap</groupId>
       <artifactId>cdap-api-spark</artifactId>
-      <version>4.1.1-SNAPSHOT</version>
+      <version>${cdap.version}</version>
     </dependency>
   </dependencies>
 
@@ -190,7 +190,9 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>2.14.1</version>
         <configuration>
-          <argLine>-Xmx5000m -Djava.awt.headless=true -XX:MaxPermSize=1024m -XX:+UseConcMarkSweepGC -XX:OnOutOfMemoryError="kill -9 %p" -Djava.net.preferIPv4Stack=true</argLine>
+          <argLine>-Xmx5000m -Djava.awt.headless=true -XX:MaxPermSize=1024m -XX:+UseConcMarkSweepGC
+            -XX:OnOutOfMemoryError="kill -9 %p" -Djava.net.preferIPv4Stack=true
+          </argLine>
           <reuseForks>false</reuseForks>
           <reportFormat>plain</reportFormat>
           <systemPropertyVariables>
