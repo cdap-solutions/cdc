@@ -10,7 +10,10 @@ import java.sql.DriverManager;
 import java.util.Properties;
 
 /**
- * Created by rsinha on 5/22/17.
+ * A class which can provide a {@link Connection} using {@link SQLServerDriver} which is
+ * serializable.
+ * Note: This class does not do any connection management. Its the responsibility of the client
+ * to manage/close the connection.
  */
 class SQLServerConnection extends AbstractFunction0<Connection> implements Serializable {
   private String connectionUrl;

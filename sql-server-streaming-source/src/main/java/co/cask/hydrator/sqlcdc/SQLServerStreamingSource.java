@@ -67,23 +67,11 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     CaptureInstanceDetail captureInstanceDetails = getCaptureInstanceDetails(connection, conf.tableName);
     LOG.info("The captured instance details {} for table {}", captureInstanceDetails, conf.tableName);
 
-//    JavaRDD<StructuredRecord> rdd = getChangeData(streamingContext, captureInstanceDetails);
     ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
 
-//    JavaDStream<Object[]> resultSetJavaDStream = JavaDStream.fromDStream(new MyDBInputStream(streamingContext
-//                                                                                        .getSparkStreamingContext()
-//                                                                                               .ssc(),
-//                                                                                              getConnectionString(), conf.username, conf.password,
-//                                                                                             streamingContext
-//                                                                                               .getSparkStreamingContext().sparkContext().sc()), tag);
-    JavaDStream<StructuredRecord> resultSetJavaDStream = JavaDStream.fromDStream(new SQLInputDstream(streamingContext
-                                                                                                       .getSparkStreamingContext().ssc(), tag,
-                                                                                                     getConnectionString(), conf.username, conf.password,
-                                                                                                     captureInstanceDetails), tag);
-
-    System.out.println("### count " + resultSetJavaDStream.count());
-    resultSetJavaDStream.print();
-    return resultSetJavaDStream;
+    return JavaDStream.fromDStream(new CDCInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
+                                                       getConnectionString(), conf.username, conf.password,
+                                                       captureInstanceDetails), tag);
   }
 
   private String getConnectionString() {

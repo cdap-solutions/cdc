@@ -19,7 +19,8 @@ import java.util.List;
 import javax.annotation.Nullable;
 
 /**
- * Created by rsinha on 5/22/17.
+ * A serializable class to allow invoking {@link scala.Function1} from Java. The function converts {@link ResultSet}
+ * to {@link StructuredRecord}
  */
 public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
 
@@ -31,11 +32,10 @@ public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, Str
     }
   }
 
-
   private StructuredRecord resultSetToStructureRecord(ResultSet resultSet) throws SQLException {
     ResultSetMetaData metadata = resultSet.getMetaData();
     List<Schema.Field> schemaFields = DBUtils.getSchemaFields(resultSet);
-    Schema schema = Schema.recordOf("dbRecord", schemaFields);
+    Schema schema = Schema.recordOf("changeRecord", schemaFields);
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
     for (int i = 0; i < schemaFields.size() - 1; i++) {
       Schema.Field field = schemaFields.get(i);

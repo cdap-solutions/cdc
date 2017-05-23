@@ -12,19 +12,20 @@ import scala.reflect.ClassManifestFactory$;
 import scala.reflect.ClassTag;
 
 /**
- * A simple InputDStream which just wraps around a given rdd to create a DStream
+ * A {@link InputDStream} which reads cdc data from SQL Server and emits {@link StructuredRecord}
  */
-public class SQLInputDstream extends InputDStream<StructuredRecord> {
-
+public class CDCInputDStream extends InputDStream<StructuredRecord> {
   private String connection;
   private String username;
   private String password;
   private SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail;
-  private transient SparkContext sparkContext; // transient to avoid serialization since SparkContext is not serializable
+  // transient to avoid serialization since SparkContext is not serializable
+  private transient SparkContext sparkContext;
+  private SQLServerConnection dbConnection;
 
-  SQLInputDstream(StreamingContext ssc, ClassTag<StructuredRecord> evidence$1, String connection,
-                  String username, String password, SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail) {
-    super(ssc, evidence$1);
+  CDCInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
+                  String password, SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail) {
+    super(ssc, tag);
     this.sparkContext = ssc.sparkContext();
     this.connection = connection;
     this.username = username;
@@ -39,26 +40,24 @@ public class SQLInputDstream extends InputDStream<StructuredRecord> {
 
   @Override
   public void start() {
-    // no-op
+    // create connection while start receiving data
+    dbConnection = new SQLServerConnection(connection, username, password);
   }
 
   @Override
   public void stop() {
     // no-op
+    // Also no need to close the dbconnection as JdbcRDD takes care of closing it
   }
 
   private RDD<StructuredRecord> getChangeData() {
     final SparkContext sparkC = sparkContext;
 
-    SQLServerConnection dbConnection = new SQLServerConnection(connection, username, password);
     String stmt = "SELECT * FROM cdc.fn_cdc_get_all_changes_" + captureInstanceDetail.captureInstanceName + "(sys.fn_cdc_get_min_lsn('" +
       captureInstanceDetail.captureInstanceName + "'), sys.fn_cdc_get_max_lsn(), 'all') WHERE ? = ?";
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
     return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1, new ResultSetToStructureRecord(),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
-
-
-//    return JavaRDD.fromRDD(jdbcRDD, ClassManifestFactory$.MODULE$.fromClass(ResultSet.class));
   }
 }

@@ -30,7 +30,6 @@
     <spark.version>1.6.1</spark.version>
     <cdap.version>4.2.0-SNAPSHOT</cdap.version>
     <hydrator.plugins.version>1.6.0</hydrator.plugins.version>
-    <hadoop.version>2.3.0</hadoop.version>
     <!-- properties for script build step that creates the config files for the artifacts -->
     <widgets.dir>widgets</widgets.dir>
     <docs.dir>docs</docs.dir>
@@ -51,11 +50,6 @@
   </repositories>
 
   <dependencies>
-    <dependency>
-      <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-client</artifactId>
-      <version> ${hadoop.version}</version>
-    </dependency>
     <dependency>
       <groupId>co.cask.cdap</groupId>
       <artifactId>cdap-etl-api</artifactId>
