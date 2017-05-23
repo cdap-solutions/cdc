@@ -4,31 +4,22 @@ import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.data.format.StructuredRecord;
-import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.etl.api.streaming.StreamingContext;
 import co.cask.cdap.etl.api.streaming.StreamingSource;
 import com.microsoft.sqlserver.jdbc.SQLServerDriver;
-import org.apache.spark.api.java.function.Function;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Serializable;
 import scala.reflect.ClassTag;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.sql.Blob;
-import java.sql.Clob;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Types;
 import java.util.Arrays;
 import java.util.List;
-import javax.annotation.Nullable;
 
 @Plugin(type = StreamingSource.PLUGIN_TYPE)
 @Name("SQLServerCDC")
@@ -77,7 +68,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     LOG.info("The captured instance details {} for table {}", captureInstanceDetails, conf.tableName);
 
 //    JavaRDD<StructuredRecord> rdd = getChangeData(streamingContext, captureInstanceDetails);
-    ClassTag<Object[]> tag = scala.reflect.ClassTag$.MODULE$.apply(Object[].class);
+    ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
 
 //    JavaDStream<Object[]> resultSetJavaDStream = JavaDStream.fromDStream(new MyDBInputStream(streamingContext
 //                                                                                        .getSparkStreamingContext()
@@ -85,18 +76,14 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
 //                                                                                              getConnectionString(), conf.username, conf.password,
 //                                                                                             streamingContext
 //                                                                                               .getSparkStreamingContext().sparkContext().sc()), tag);
-    JavaDStream<Object[]> resultSetJavaDStream = JavaDStream.fromDStream(new SQLInputDstream(streamingContext.getSparkStreamingContext().ssc(), tag,
-                                                getConnectionString(), conf.username, conf.password,
-                                                captureInstanceDetails), tag);
+    JavaDStream<StructuredRecord> resultSetJavaDStream = JavaDStream.fromDStream(new SQLInputDstream(streamingContext
+                                                                                                       .getSparkStreamingContext().ssc(), tag,
+                                                                                                     getConnectionString(), conf.username, conf.password,
+                                                                                                     captureInstanceDetails), tag);
 
     System.out.println("### count " + resultSetJavaDStream.count());
-
-    return resultSetJavaDStream.map(new Function<Object[], StructuredRecord>() {
-      @Override
-      public StructuredRecord call(Object[] v1) throws Exception {
-        return resultSetToStructureRecord(v1);
-      }
-    });
+    resultSetJavaDStream.print();
+    return resultSetJavaDStream;
   }
 
   private String getConnectionString() {
@@ -180,89 +167,5 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     ResultSet resultSet = statement.executeQuery("sp_pkeys " + tableName);
     resultSet.next();
     return resultSet.getString("COLUMN_NAME");
-  }
-
-//  static class MapResult extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
-//    final SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail;
-//
-//    MapResult(SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail) {
-//      this.captureInstanceDetail = captureInstanceDetail;
-//    }
-//
-//    public StructuredRecord apply(ResultSet row) {
-//      try {
-//        return resultSetToStructureRecord(row);
-//      } catch (SQLException e) {
-//        throw new RuntimeException(e);
-//      }
-//    }
-//  }
-
-  static StructuredRecord resultSetToStructureRecord(Object[] resultSet) throws SQLException {
-//    ResultSetMetaData metadata = resultSet.getMetaData();
-//    List<Schema.Field> schemaFields = DBUtils.getSchemaFields(resultSet);
-//    Schema schema = Schema.recordOf("dbRecord", schemaFields);
-//    StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
-//    for (int i = 0; i < schemaFields.size() - 1; i++) {
-//      Schema.Field field = schemaFields.get(i);
-//      int sqlColumnType = metadata.getColumnType(i + 1);
-//      recordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
-//    }
-//    return recordBuilder.build();
-    Schema schema = Schema.recordOf("someSchema", Schema.Field.of("op_type", Schema.of(Schema.Type.STRING)));
-    return StructuredRecord.builder(schema).set("op_type", "sc").build();
-  }
-
-  //TODO: This function is taken from DatabaseSource. We should move it to the DBUtil class in Datasbase plugin and
-  // use it here.
-  @Nullable
-  private static Object transformValue(int sqlColumnType, ResultSet resultSet, String fieldName) throws SQLException {
-    Object original = resultSet.getObject(fieldName);
-    if (original != null) {
-      switch (sqlColumnType) {
-        case Types.SMALLINT:
-        case Types.TINYINT:
-          return ((Number) original).intValue();
-        case Types.NUMERIC:
-        case Types.DECIMAL:
-          return ((BigDecimal) original).doubleValue();
-        case Types.DATE:
-          return resultSet.getDate(fieldName).getTime();
-        case Types.TIME:
-          return resultSet.getTime(fieldName).getTime();
-        case Types.TIMESTAMP:
-          return resultSet.getTimestamp(fieldName).getTime();
-        case Types.BLOB:
-          Object toReturn;
-          Blob blob = (Blob) original;
-          try {
-            toReturn = blob.getBytes(1, (int) blob.length());
-          } finally {
-            blob.free();
-          }
-          return toReturn;
-        case Types.CLOB:
-          String s;
-          StringBuilder sbf = new StringBuilder();
-          Clob clob = (Clob) original;
-          try {
-            try (BufferedReader br = new BufferedReader(clob.getCharacterStream(1, (int) clob.length()))) {
-              if ((s = br.readLine()) != null) {
-                sbf.append(s);
-              }
-              while ((s = br.readLine()) != null) {
-                sbf.append(System.getProperty("line.separator"));
-                sbf.append(s);
-              }
-            }
-          } catch (IOException e) {
-            throw new SQLException(e);
-          } finally {
-            clob.free();
-          }
-          return sbf.toString();
-      }
-    }
-    return original;
   }
 }

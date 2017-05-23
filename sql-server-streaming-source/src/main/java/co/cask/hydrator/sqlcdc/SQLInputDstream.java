@@ -1,5 +1,6 @@
 package co.cask.hydrator.sqlcdc;
 
+import co.cask.cdap.api.data.format.StructuredRecord;
 import org.apache.spark.SparkContext;
 import org.apache.spark.rdd.JdbcRDD;
 import org.apache.spark.rdd.RDD;
@@ -7,17 +8,13 @@ import org.apache.spark.streaming.StreamingContext;
 import org.apache.spark.streaming.Time;
 import org.apache.spark.streaming.dstream.InputDStream;
 import scala.Option;
-import scala.Serializable;
 import scala.reflect.ClassManifestFactory$;
 import scala.reflect.ClassTag;
-import scala.runtime.AbstractFunction1;
-
-import java.sql.ResultSet;
 
 /**
  * A simple InputDStream which just wraps around a given rdd to create a DStream
  */
-public class SQLInputDstream extends InputDStream<Object[]> {
+public class SQLInputDstream extends InputDStream<StructuredRecord> {
 
   private String connection;
   private String username;
@@ -25,7 +22,7 @@ public class SQLInputDstream extends InputDStream<Object[]> {
   private SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail;
   private transient SparkContext sparkContext; // transient to avoid serialization since SparkContext is not serializable
 
-  SQLInputDstream(StreamingContext ssc, ClassTag<Object[]> evidence$1, String connection,
+  SQLInputDstream(StreamingContext ssc, ClassTag<StructuredRecord> evidence$1, String connection,
                   String username, String password, SQLServerStreamingSource.CaptureInstanceDetail captureInstanceDetail) {
     super(ssc, evidence$1);
     this.sparkContext = ssc.sparkContext();
@@ -36,7 +33,7 @@ public class SQLInputDstream extends InputDStream<Object[]> {
   }
 
   @Override
-  public Option<RDD<Object[]>> compute(Time validTime) {
+  public Option<RDD<StructuredRecord>> compute(Time validTime) {
     return Option.apply(getChangeData());
   }
 
@@ -50,7 +47,7 @@ public class SQLInputDstream extends InputDStream<Object[]> {
     // no-op
   }
 
-  private RDD<Object[]> getChangeData() {
+  private RDD<StructuredRecord> getChangeData() {
     final SparkContext sparkC = sparkContext;
 
     SQLServerConnection dbConnection = new SQLServerConnection(connection, username, password);
@@ -58,18 +55,10 @@ public class SQLInputDstream extends InputDStream<Object[]> {
       captureInstanceDetail.captureInstanceName + "'), sys.fn_cdc_get_max_lsn(), 'all') WHERE ? = ?";
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
-    return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1, new MapResult(),
-                    ClassManifestFactory$.MODULE$.fromClass(Object[].class));
+    return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1, new ResultSetToStructureRecord(),
+                         ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
 
 
 //    return JavaRDD.fromRDD(jdbcRDD, ClassManifestFactory$.MODULE$.fromClass(ResultSet.class));
   }
-
-  static class MapResult extends AbstractFunction1<ResultSet, Object[]> implements Serializable {
-
-    public Object[] apply(ResultSet row) {
-      return JdbcRDD.resultSetToObjectArray(row);
-    }
-  }
-
 }
