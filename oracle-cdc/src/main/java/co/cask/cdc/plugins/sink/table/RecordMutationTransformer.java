@@ -14,7 +14,7 @@
  * the License.
  */
 
-package co.cask.cdc.plugins.sink.hbase;
+package co.cask.cdc.plugins.sink.table;
 
 import co.cask.cdap.api.common.Bytes;
 import co.cask.cdap.api.data.format.StructuredRecord;

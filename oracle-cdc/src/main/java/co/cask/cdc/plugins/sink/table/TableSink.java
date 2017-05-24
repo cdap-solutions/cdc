@@ -14,7 +14,7 @@
  * the License.
  */
 
-package co.cask.cdc.plugins.sink.hbase;
+package co.cask.cdc.plugins.sink.table;
 
 import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Name;
