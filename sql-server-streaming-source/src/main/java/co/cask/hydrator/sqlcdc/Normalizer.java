@@ -82,7 +82,6 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     Schema cdcSchema = Schema.recordOf("cdc", TABLE_NAME_SCHEMA_FIELD, OP_TYPE_SCHEMA_FIELD, Schema.Field.of
       ("innerRecord", ddlDataSchema));
 
-
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(cdcSchema);
     recordBuilder
       .set(TABLE_NAME_SCHEMA_FIELD.getName(), "singleTable")

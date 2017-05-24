@@ -22,6 +22,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -64,7 +65,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
 
     // check that CDC is enabled on the database and the given table
     checkCTEnabled(connection, CDCElement.DATABASE, conf.dbName);
-    checkCTEnabled(connection, CDCElement.TABLE, conf.tableName);
+//    checkCTEnabled(connection, CDCElement.TABLE, conf.tableName);
 
     // get the capture instance detail of the the given table. We need this because this contains information about
     // the cdc table like its name and captured columns
@@ -73,17 +74,12 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
 
     ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
 
-    Set<String> keyColumns = getKeyColumns(connection);
-    List<Schema.Field> columnns = getColumnns(connection);
-
-    // TODO the schema should be user supplied
-    TableInformation tableInformation = new TableInformation("dbo", conf.tableName, getColumnns(connection),
-                                                             getKeyColumns(connection));
+    List<TableInformation> ctEnabledTables = getCTEnabledTables(connection);
 
     JavaDStream<StructuredRecord> structuredRecordJavaDStream =
       JavaDStream.fromDStream(new CDCInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
                                                   getConnectionString(), conf.username, conf
-                                                    .password, tableInformation), tag);
+                                                    .password, ctEnabledTables), tag);
 
     structuredRecordJavaDStream.map(new Function<StructuredRecord, StructuredRecord>() {
       @Override
@@ -102,22 +98,23 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
                          conf.dbName);
   }
 
-  private List<Schema.Field> getColumnns(Connection connection) throws SQLException {
-    String query = String.format("SELECT * from %s", conf.tableName);
+  private List<Schema.Field> getColumnns(Connection connection, String schema, String table) throws SQLException {
+    String query = String.format("SELECT * from [%s].[%s]", schema, table);
     Statement statement = connection.createStatement();
     statement.setMaxRows(1);
     ResultSet resultSet = statement.executeQuery(query);
     return DBUtils.getSchemaFields(resultSet);
   }
 
-  private Set<String> getKeyColumns(Connection connection) throws SQLException {
+  private Set<String> getKeyColumns(Connection connection, String schema, String table) throws SQLException {
     String stmt =
       "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE " +
         "OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA+'.'+CONSTRAINT_NAME), 'IsPrimaryKey') = 1 AND " +
-        "TABLE_NAME = ?";
+        "TABLE_SCHEMA = ? AND TABLE_NAME = ?";
     Set<String> keyColumns = new LinkedHashSet<>();
     try (PreparedStatement primaryKeyStatement = connection.prepareStatement(stmt)) {
-      primaryKeyStatement.setString(1, conf.tableName);
+      primaryKeyStatement.setString(1, schema);
+      primaryKeyStatement.setString(2, table);
       try (ResultSet resultSet = primaryKeyStatement.executeQuery()) {
         while (resultSet.next()) {
           keyColumns.add(resultSet.getString(1));
@@ -127,31 +124,31 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     return keyColumns;
   }
 
-  private ResultSet getCTEnabledTables(Connection connection) throws SQLException {
-    String stmt = "SELECT s.name as Schema_name, t.name AS Table_name, tr.* FROM sys.change_tracking_tables tr " +
-      "INNER JOIN sys.tables t on t.object_id = tr.object_id INNER JOIN sys.schemas s on s.schema_id = t.schema_id";
-    return connection.createStatement().executeQuery(stmt);
+  private List<TableInformation> getCTEnabledTables(Connection connection) throws SQLException {
+    List<TableInformation> tableInformations = new LinkedList<>();
+    String stmt = "SELECT s.name as schema_name, t.name AS table_name, ctt.* FROM sys.change_tracking_tables ctt " +
+      "INNER JOIN sys.tables t on t.object_id = ctt.object_id INNER JOIN sys.schemas s on s.schema_id = t.schema_id";
+    ResultSet rs = connection.createStatement().executeQuery(stmt);
+    while (rs.next()) {
+      String schemaName = rs.getString("schema_name");
+      String tableName = rs.getString("table_name");
+      tableInformations.add(new TableInformation(schemaName, tableName,
+                                                 getColumnns(connection, schemaName, tableName),
+                                                 getKeyColumns(connection, schemaName, tableName)));
+    }
+    return tableInformations;
   }
 
   private void checkCTEnabled(Connection connection, SQLServerStreamingSource.CDCElement type, String name)
     throws SQLException {
-    if (type == SQLServerStreamingSource.CDCElement.TABLE) {
-      ResultSet ctEnabledTables = getCTEnabledTables(connection);
-      while (ctEnabledTables.next()) {
-        if (ctEnabledTables.getString("Table_name").equalsIgnoreCase(name)) {
-          return;
-        }
-      }
-    } else {
-      // database
-      String query = "SELECT * FROM sys.change_tracking_databases WHERE database_id=DB_ID(?)";
-      PreparedStatement preparedStatement = connection.prepareStatement(query);
-      preparedStatement.setString(1, name);
-      ResultSet resultSet = preparedStatement.executeQuery();
-      if (resultSet.next()) {
-        // if resultset is not empty it means that our select with where clause returned data meaning ct is enabled.
-        return;
-      }
+    // database
+    String query = "SELECT * FROM sys.change_tracking_databases WHERE database_id=DB_ID(?)";
+    PreparedStatement preparedStatement = connection.prepareStatement(query);
+    preparedStatement.setString(1, name);
+    ResultSet resultSet = preparedStatement.executeQuery();
+    if (resultSet.next()) {
+      // if resultset is not empty it means that our select with where clause returned data meaning ct is enabled.
+      return;
     }
     throw new RuntimeException(String.format("Change Tracking is not enabled on the specified table '%s'. Please " +
                                                "enable it first.", name));

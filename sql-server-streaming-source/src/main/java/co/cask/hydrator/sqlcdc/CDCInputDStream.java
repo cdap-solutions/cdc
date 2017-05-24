@@ -9,11 +9,13 @@ import org.apache.spark.streaming.StreamingContext;
 import org.apache.spark.streaming.Time;
 import org.apache.spark.streaming.dstream.InputDStream;
 import scala.Option;
+import scala.collection.JavaConversions;
 import scala.reflect.ClassManifestFactory$;
 import scala.reflect.ClassTag;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -21,27 +23,34 @@ import java.util.Set;
  * A {@link InputDStream} which reads cdc data from SQL Server and emits {@link StructuredRecord}
  */
 public class CDCInputDStream extends InputDStream<StructuredRecord> {
+  private ClassTag<StructuredRecord> tag;
   private String connection;
   private String username;
   private String password;
-  private TableInformation tableInformation;
+  private List<TableInformation> tableInformations;
   // transient to avoid serialization since SparkContext is not serializable
   private transient SparkContext sparkContext;
   private SQLServerConnection dbConnection;
 
   CDCInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
-                  String password, TableInformation tableInformation) {
+                  String password, List<TableInformation> tableInformations) {
     super(ssc, tag);
+    this.tag = tag;
     this.sparkContext = ssc.sparkContext();
     this.connection = connection;
     this.username = username;
     this.password = password;
-    this.tableInformation = tableInformation;
+    this.tableInformations = tableInformations;
   }
 
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
-    return Option.apply(getChangeData());
+    List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
+    for (TableInformation tableInformation : tableInformations) {
+      changeRDDs.add(getChangeData(tableInformation));
+    }
+    RDD<StructuredRecord> changes = sparkContext.union(JavaConversions.asScalaBuffer(changeRDDs), tag);
+    return Option.apply(changes);
   }
 
   @Override
@@ -56,7 +65,7 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     // Also no need to close the dbconnection as JdbcRDD takes care of closing it
   }
 
-  private RDD<StructuredRecord> getChangeData() {
+  private RDD<StructuredRecord> getChangeData(TableInformation tableInformation) {
 
     final SparkContext sparkC = sparkContext;
 
