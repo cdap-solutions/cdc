@@ -90,8 +90,7 @@ public class RecordMutationTransformer {
         put = createPut(record, rowKeyField);
         StructuredRecord insertMap = record.get(afterKeyField.getName());
         for (Schema.Field field : insertMap.getSchema().getFields()) {
-          String query = field.getName();
-          put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes(query));
+          setPutField(put, family, field, insertMap);
         }
         return put;
       case "D":
@@ -104,6 +103,49 @@ public class RecordMutationTransformer {
       default:
         throw new IllegalArgumentException(opTypeKeyField.getName() +
                                              "can only be \"I\" (insert), \"U\" (update), or \"D\" (delete)");
+    }
+  }
+
+  private void setPutField(Put put, String family, Schema.Field field, StructuredRecord record) {
+    // have to handle nulls differently. In a Put object, it's only valid to use the add(byte[], byte[])
+    // for null values, as the other add methods take boolean vs Boolean, int vs Integer, etc.
+    String query = field.getName();
+    Object val = record.get(field.getName());
+    if (field.getSchema().isNullable() && val == null) {
+      put.add(Bytes.toBytes(family), Bytes.toBytes(query), null);
+      return;
+    }
+
+    Schema.Type type = validateAndGetType(field);
+
+    switch (type) {
+      case BOOLEAN:
+        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Boolean) val));
+        break;
+      case INT:
+        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Integer) val));
+        break;
+      case LONG:
+        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Long) val));
+        break;
+      case FLOAT:
+        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Float) val));
+        break;
+      case DOUBLE:
+        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Double) val));
+        break;
+      case BYTES:
+        if (val instanceof ByteBuffer) {
+          put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((ByteBuffer) val));
+        } else {
+          put.add(Bytes.toBytes(family), Bytes.toBytes(query), (byte[]) val);
+        }
+        break;
+      case STRING:
+        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((String) val));
+        break;
+      default:
+        throw new IllegalArgumentException("Field " + field.getName() + " is of unsupported type " + type);
     }
   }
 
