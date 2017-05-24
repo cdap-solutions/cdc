@@ -46,7 +46,6 @@ public class Test {
   }
 
   private static void printResultSet(ResultSet resultSet) throws SQLException {
-    ResultSetToStructureRecord resultSetToStructureRecord = new ResultSetToStructureRecord();
     ResultSetMetaData rsmd = resultSet.getMetaData();
     int columnsNumber = rsmd.getColumnCount();
     while (resultSet.next()) {

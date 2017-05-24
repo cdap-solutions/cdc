@@ -80,7 +80,8 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
 
     System.out.println("Query String: " + stmt);
     //TODO Currently we are not partitioning the data. We should partition it for scalability
-    return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1, new ResultSetToStructureRecord(),
+    return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1,
+                         new ResultSetToStructureRecord(tableInformation.getSchemaName(), tableInformation.getName()),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }
 

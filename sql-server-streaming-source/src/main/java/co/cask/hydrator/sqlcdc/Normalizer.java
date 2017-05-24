@@ -84,7 +84,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(cdcSchema);
     recordBuilder
-      .set(TABLE_NAME_SCHEMA_FIELD.getName(), "singleTable")
+      .set(TABLE_NAME_SCHEMA_FIELD.getName(), input.get("tableName"))
       .set("innerRecord", innerRecordBuilder.build());
     return recordBuilder;
   }

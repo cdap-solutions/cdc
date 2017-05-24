@@ -3,6 +3,7 @@ package co.cask.hydrator.sqlcdc;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import co.cask.hydrator.plugin.DBUtils;
+import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import scala.Serializable;
 import scala.runtime.AbstractFunction1;
@@ -26,6 +27,14 @@ import javax.annotation.Nullable;
  */
 public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
 
+  private final String schemaName;
+  private final String tableName;
+
+  public ResultSetToStructureRecord(String schemaName, String tableName) {
+    this.schemaName = schemaName;
+    this.tableName = tableName;
+  }
+
   public StructuredRecord apply(ResultSet row) {
     try {
       return resultSetToStructureRecord(row);
@@ -37,12 +46,16 @@ public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, Str
   private StructuredRecord resultSetToStructureRecord(ResultSet resultSet) throws SQLException {
     ResultSetMetaData metadata = resultSet.getMetaData();
     // Nullable schema because for delete we will not have data in table even though the columns are non-nullable
-    List<Schema.Field> schemaFields = getNullableSchema(DBUtils.getSchemaFields(resultSet));
+    List<Schema.Field> schemaFields = new ArrayList<>();
+    schemaFields.add(Schema.Field.of("tableName", Schema.of(Schema.Type.STRING)));
+    schemaFields.addAll(getNullableSchema(DBUtils.getSchemaFields(resultSet)));
     Schema schema = Schema.recordOf("changeRecord", schemaFields);
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
-    for (int i = 0; i < schemaFields.size() - 1; i++) {
+    // 0 th field is tableName
+    recordBuilder.set("tableName", Joiner.on(".").join(schemaName, tableName));
+    for (int i = 1; i <= metadata.getColumnCount(); i++) {
       Schema.Field field = schemaFields.get(i);
-      int sqlColumnType = metadata.getColumnType(i + 1);
+      int sqlColumnType = metadata.getColumnType(i);
       recordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
     }
     return recordBuilder.build();
