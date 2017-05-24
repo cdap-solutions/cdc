@@ -236,11 +236,11 @@ public class RecordMutationTransformer {
 
   @Nullable
   private Schema.Field getBeforeKeyField(Schema recordSchema) {
-    return recordSchema.getField(this.rowField);
+    return recordSchema.getField(this.beforeField);
   }
 
   @Nullable
   private Schema.Field getAfterKeyField(Schema recordSchema) {
-    return recordSchema.getField(this.opTypeField);
+    return recordSchema.getField(this.afterField);
   }
 }
