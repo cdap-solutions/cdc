@@ -24,53 +24,41 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
   private static Logger LOG = LoggerFactory.getLogger(Normalizer.class);
   private static Gson GSON = new Gson();
 
-  private static final Set<String> DDL_SYSTEM_FIELD = Sets.newHashSet("__$start_lsn", "__$seqval", "__$operation",
-                                                                "__$update_mask");
+  private static final Set<String> DDL_SYSTEM_FIELD = Sets.newHashSet("SYS_CHANGE_CREATION_VERSION",
+                                                                      "SYS_CHANGE_OPERATION", "SYS_CHANGE_VERSION");
 
   private static final Schema.Field TABLE_NAME_SCHEMA_FIELD = Schema.Field.of("tablename", Schema.of(Schema.Type
-                                                                                                      .STRING));
+                                                                                                       .STRING));
   private static final Schema.Field OP_TYPE_SCHEMA_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
 
 
   @Override
   public void transform(StructuredRecord input, Emitter<StructuredRecord> emitter) throws Exception {
     LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
-    LOG.info("The op type is {}", input.get("__$operation"));
-    int operation = input.get("__$operation");
+    LOG.info("The op type is {}", input.get("SYS_CHANGE_OPERATION"));
+    String operation = input.get("SYS_CHANGE_OPERATION");
     StructuredRecord.Builder recordBuilder;
     StructuredRecord record;
-    switch (operation) {
-      case 1:
-        // delete
-        recordBuilder = getInsertRecord(input);
-        record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "D").build();
-        LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
-        emitter.emit(record);
-        break;
-      case 2:
-        // insert
-        recordBuilder = getInsertRecord(input);
-        record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "I").build();
-        LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
-        emitter.emit(record);
-        break;
-      case 3:
-        // no-op
-        // We will never see case operation 3 which represent the old record for update (operation 4)
-        // Note: The old record is also not needed if an update happened changing the index column
-        // because for such change the cdc has a delete and an insert not an update.
-        LOG.info("Found change data entry with operation type {}. Ignoring it as old record during update is not " +
-                   "used. Will process update later when we find Operation type 4.", operation);
-        break;
-      case 4:
-        // update
-        recordBuilder = getInsertRecord(input);
-        record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "U").build();
-        LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
-        emitter.emit(record);
-        break;
-      default:
-        throw new IllegalArgumentException("Unknown type" + operation);
+    if (operation.equalsIgnoreCase("D")) {
+      // delete
+      recordBuilder = getInsertRecord(input);
+      record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "D").build();
+      LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
+      emitter.emit(record);
+    } else if (operation.equalsIgnoreCase("I")) {
+      // insert
+      recordBuilder = getInsertRecord(input);
+      record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "I").build();
+      LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
+      emitter.emit(record);
+    } else if (operation.equalsIgnoreCase("U")) {
+      // update
+      recordBuilder = getInsertRecord(input);
+      record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "U").build();
+      LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
+      emitter.emit(record);
+    } else {
+      throw new IllegalArgumentException("Unknown type" + operation);
 
     }
   }

@@ -3,6 +3,7 @@ package co.cask.hydrator.sqlcdc;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import co.cask.hydrator.plugin.DBUtils;
+import com.google.common.collect.Lists;
 import scala.Serializable;
 import scala.runtime.AbstractFunction1;
 
@@ -15,6 +16,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.List;
 import javax.annotation.Nullable;
 
@@ -34,7 +36,8 @@ public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, Str
 
   private StructuredRecord resultSetToStructureRecord(ResultSet resultSet) throws SQLException {
     ResultSetMetaData metadata = resultSet.getMetaData();
-    List<Schema.Field> schemaFields = DBUtils.getSchemaFields(resultSet);
+    // Nullable schema because for delete we will not have data in table even though the columns are non-nullable
+    List<Schema.Field> schemaFields = getNullableSchema(DBUtils.getSchemaFields(resultSet));
     Schema schema = Schema.recordOf("changeRecord", schemaFields);
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
     for (int i = 0; i < schemaFields.size() - 1; i++) {
@@ -44,6 +47,17 @@ public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, Str
     }
     return recordBuilder.build();
   }
+
+  private static List<Schema.Field> getNullableSchema(List<Schema.Field> fields) throws SQLException {
+    List<Schema.Field> schemaFields = Lists.newArrayList();
+    for (Schema.Field field : fields) {
+      String name = field.getName();
+      Schema schema = Schema.nullableOf(field.getSchema());
+      schemaFields.add(Schema.Field.of(name, schema));
+    }
+    return schemaFields;
+  }
+
 
   //TODO: This function is taken from DatabaseSource. We should move it to the DBUtil class in Datasbase plugin and
   // use it here.
