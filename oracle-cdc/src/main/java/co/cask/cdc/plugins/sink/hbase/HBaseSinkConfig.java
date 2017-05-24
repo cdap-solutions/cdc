@@ -47,9 +47,25 @@ public class HBaseSinkConfig extends ReferencePluginConfig {
   private String schema;
 
   @Name("rowField")
-  @Description("Field int he Schema that corresponds to a row key.")
+  @Description("Field in the Schema that corresponds to a row key.")
   @Macro
   private String rowField;
+
+  @Name("beforeField")
+  @Description("Field in the Schema that corresponds to the fields to be discarded.")
+  @Macro
+  private String beforeField;
+
+  @Name("afterField")
+  @Description("Field in the Schema that corresponds to the fields to be inserted.")
+  @Macro
+  private String afterField;
+
+  @Name("opTypeField")
+  @Description("Field in the Schema that corresponds to the type of operation." +
+    "\"I\" for insert. \"U\" for update. \"D\" for delete.")
+  @Macro
+  private String opTypeField;
 
   // Optional Fields
   @Name("zookeeperQuorum")
@@ -92,6 +108,14 @@ public class HBaseSinkConfig extends ReferencePluginConfig {
   public String getRowField() {
     return rowField;
   }
+
+  public String getOpTypeField() {return opTypeField;}
+
+  public String getBeforeField() {
+    return beforeField;
+  }
+
+  public String getAfterField() {return afterField;}
 
   @Nullable
   public String getZkQuorum() {

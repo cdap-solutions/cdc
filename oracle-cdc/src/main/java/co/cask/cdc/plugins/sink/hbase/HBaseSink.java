@@ -23,17 +23,14 @@ import co.cask.cdap.api.data.batch.Output;
 import co.cask.cdap.api.data.batch.OutputFormatProvider;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.dataset.lib.KeyValue;
-import co.cask.cdap.api.dataset.table.Put;
 import co.cask.cdap.etl.api.Emitter;
 import co.cask.cdap.etl.api.PipelineConfigurer;
 import co.cask.cdap.etl.api.batch.BatchRuntimeContext;
 import co.cask.cdap.etl.api.batch.BatchSink;
 import co.cask.cdap.etl.api.batch.BatchSinkContext;
-import co.cask.cdap.format.RecordPutTransformer;
 import co.cask.hydrator.common.ReferenceBatchSink;
 import co.cask.hydrator.common.batch.JobUtils;
 import com.google.common.base.Strings;
-import com.google.gson.Gson;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -63,7 +60,6 @@ import java.util.Map;
 @Description("Writes to Apache HBase tables.")
 public class HBaseSink extends ReferenceBatchSink<StructuredRecord, NullWritable, Mutation> {
   private static final Logger LOG = LoggerFactory.getLogger(HBaseSink.class);
-  private static final Gson GSON = new Gson();
   private final HBaseSinkConfig hBaseSinkConfig;
 
   private Configuration conf;
@@ -146,19 +142,16 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, NullWritable
   @Override
   public void initialize(BatchRuntimeContext context) throws Exception {
     super.initialize(context);
-    recordMutationTransformer = new RecordMutationTransformer(hBaseSinkConfig.getRowField(), null);
+    recordMutationTransformer = new RecordMutationTransformer(hBaseSinkConfig.getRowField(),
+                                                              hBaseSinkConfig.getOpTypeField(),
+                                                              hBaseSinkConfig.getBeforeField(),
+                                                              hBaseSinkConfig.getAfterField(),
+                                                              null);
   }
 
   @Override
   public void transform(StructuredRecord input, Emitter<KeyValue<NullWritable, Mutation>> emitter) throws Exception {
-    Mutation mutation = recordMutationTransformer.toMutation(input);
-    if (mutation instanceof org.apache.hadoop.hbase.client.Put) {
-
-    }
-    org.apache.hadoop.hbase.client.Put hbasePut = new org.apache.hadoop.hbase.client.Put(mutation.getRow());
-    for (Map.Entry<byte[], byte[]> entry : mutation.getValues().entrySet()) {
-      hbasePut.add(hBaseSinkConfig.getColFamily().getBytes(), entry.getKey(), entry.getValue());
-    }
-    emitter.emit(new KeyValue<NullWritable, Mutation>(NullWritable.get(), hbasePut));
+    Mutation mutation = recordMutationTransformer.toMutation(input, hBaseSinkConfig.getColFamily());
+    emitter.emit(new KeyValue<NullWritable, Mutation>(NullWritable.get(), mutation));
   }
 }
