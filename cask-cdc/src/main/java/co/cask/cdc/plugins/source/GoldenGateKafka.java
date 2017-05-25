@@ -37,6 +37,7 @@ import kafka.javaapi.consumer.SimpleConsumer;
 import kafka.message.MessageAndMetadata;
 import kafka.serializer.DefaultDecoder;
 import org.apache.avro.SchemaNormalization;
+import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFunction;
@@ -67,6 +68,8 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
     = Schema.recordOf("GenericWrapperSchema", Schema.Field.of("message", Schema.of(Schema.Type.BYTES)));
   private static final Schema DDL_SCHEMA_MESSAGE
     = Schema.recordOf("DDLRecord", Schema.Field.of("message", Schema.of(Schema.Type.BYTES)));
+  private static final Schema TRANSFORMED_MESSAGE
+    = Schema.recordOf("Message", Schema.Field.of("message", Schema.of(Schema.Type.BYTES)));
 
   private static final Schema STATE_SCHEMA = Schema.recordOf("state",
                                                              Schema.Field.of("data",
@@ -136,18 +139,18 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
 
     LOG.info("Using initial offsets {}", offsets);
 
-    Function3<String, Optional<MessageAndMetadata>, State<Map<Long, String>>, StructuredRecord> mapFunction
-      = new Function3<String, Optional<MessageAndMetadata>, State<Map<Long, String>>, StructuredRecord>() {
+    Function3<String, Optional<StructuredRecord>, State<Map<Long, String>>, StructuredRecord> mapFunction
+      = new Function3<String, Optional<StructuredRecord>, State<Map<Long, String>>, StructuredRecord>() {
       @Override
-      public StructuredRecord call(String v1, Optional<MessageAndMetadata> value, State<Map<Long, String>> state)
+      public StructuredRecord call(String v1, Optional<StructuredRecord> value, State<Map<Long, String>> state)
         throws Exception {
         if (state.exists()) {
           LOG.info("Current state is {}", state.get());
         } else {
           LOG.info("State does not exists");
         }
-        MessageAndMetadata messageAndMetadata = value.get();
-        byte[] message = (byte[]) messageAndMetadata.message();
+        StructuredRecord input = value.get();
+        byte[] message = input.get("message");
         String messageBody = new String(message, StandardCharsets.UTF_8);
 
         if (messageBody.contains("generic_wrapper") && messageBody.contains("oracle.goldengate")) {
@@ -192,10 +195,22 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
         public MessageAndMetadata call(MessageAndMetadata<byte[], byte[]> in) throws Exception {
           return in;
         }
-      }).mapToPair(new PairFunction<MessageAndMetadata, String, MessageAndMetadata>() {
+      }).transform(new Function<JavaRDD<MessageAndMetadata>, JavaRDD<StructuredRecord>>() {
       @Override
-      public Tuple2<String, MessageAndMetadata> call(MessageAndMetadata messageAndMetadata) throws Exception {
-        return new Tuple2<>("", messageAndMetadata);
+      public JavaRDD<StructuredRecord> call(JavaRDD<MessageAndMetadata> inputs) throws Exception {
+        return inputs.map(new Function<MessageAndMetadata, StructuredRecord>() {
+          @Override
+          public StructuredRecord call(MessageAndMetadata input) throws Exception {
+            StructuredRecord.Builder builder = StructuredRecord.builder(TRANSFORMED_MESSAGE);
+            builder.set("message", input.message());
+            return builder.build();
+          }
+        });
+      }
+    }).mapToPair(new PairFunction<StructuredRecord, String, StructuredRecord>() {
+      @Override
+      public Tuple2<String, StructuredRecord> call(StructuredRecord record) throws Exception {
+        return new Tuple2<>("", record);
       }
     }).mapWithState(StateSpec.function(mapFunction));
   }
