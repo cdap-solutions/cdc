@@ -42,11 +42,8 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.mapreduce.KeyValueSerialization;
-import org.apache.hadoop.hbase.mapreduce.MultiTableOutputFormat;
 import org.apache.hadoop.hbase.mapreduce.MutationSerialization;
 import org.apache.hadoop.hbase.mapreduce.ResultSerialization;
-import org.apache.hadoop.hbase.mapreduce.TableOutputFormat;
-import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.StringUtils;
 import org.slf4j.Logger;
@@ -102,7 +99,8 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, ImmutableByt
     conf = job.getConfiguration();
     HBaseConfiguration.addHbaseResources(conf);
 
-    context.addOutput(Output.of(hBaseSinkConfig.getTableName(), new HBaseOutputFormatProvider(hBaseSinkConfig, conf)));
+    // don't need to provide a table name here because we will be dynamically adding to tables
+    context.addOutput(null, new HBaseOutputFormatProvider(hBaseSinkConfig, conf));
   }
 
   private void createHBaseTable(String tableName) {
@@ -110,7 +108,7 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, ImmutableByt
       hBaseAdmin = new HBaseAdmin(conf);
       hBaseAdmin.createTable(new HTableDescriptor(TableName.valueOf(tableName)));
     } catch (TableExistsException ex) {
-      LOG.debug("HBase Table {} already exists.", hBaseSinkConfig.getTableName());
+      LOG.debug("HBase Table {} already exists.", tableName);
     } catch (IOException ex) {
       LOG.error("Unable to create a HBase Table.", ex);
     }
@@ -122,11 +120,11 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, ImmutableByt
 
     HBaseOutputFormatProvider(HBaseSinkConfig config, Configuration configuration) {
       this.conf = new HashMap<>();
-      // conf.put(TableOutputFormat.OUTPUT_TABLE, config.getTableName());
       String zkQuorum = !Strings.isNullOrEmpty(config.getZkQuorum()) ? config.getZkQuorum() : "localhost";
       String zkClientPort = !Strings.isNullOrEmpty(config.getZkClientPort()) ? config.getZkClientPort() : "2181";
       String zkNodeParent = !Strings.isNullOrEmpty(config.getZkNodeParent()) ? config.getZkNodeParent() : "/hbase";
-      // conf.put(TableOutputFormat.QUORUM_ADDRESS, String.format("%s:%s:%s", zkQuorum, zkClientPort, zkNodeParent));
+      conf.put(MultiTableOutputFormatWithQuorumAddress.QUORUM_ADDRESS,
+               String.format("%s:%s:%s", zkQuorum, zkClientPort, zkNodeParent));
       String[] serializationClasses = {
         configuration.get("io.serializations"),
         MutationSerialization.class.getName(),
@@ -137,7 +135,7 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, ImmutableByt
 
     @Override
     public String getOutputFormatClassName() {
-      return MultiTableOutputFormat.class.getName();
+      return MultiTableOutputFormatWithQuorumAddress.class.getName();
     }
 
     @Override

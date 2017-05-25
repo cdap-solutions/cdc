@@ -31,43 +31,6 @@ import javax.annotation.Nullable;
  */
 public class HBaseSinkConfig extends ReferencePluginConfig {
 
-  @Name("name")
-  @Description("Name of the HBase table to write to.")
-  @Macro
-  private String tableName;
-
-  @Name("columnFamily")
-  @Description("Name of the Column Family.")
-  @Macro
-  private String colFamily;
-
-  @Name("schema")
-  @Description("Output Schema for the HBase table.")
-  @Macro
-  private String schema;
-
-  @Name("rowField")
-  @Description("Field in the Schema that corresponds to a row key.")
-  @Macro
-  private String rowField;
-
-  @Name("beforeField")
-  @Description("Field in the Schema that corresponds to the fields to be discarded.")
-  @Macro
-  private String beforeField;
-
-  @Name("afterField")
-  @Description("Field in the Schema that corresponds to the fields to be inserted.")
-  @Macro
-  private String afterField;
-
-  @Name("opTypeField")
-  @Description("Field in the Schema that corresponds to the type of operation." +
-    "\"I\" for insert. \"U\" for update. \"D\" for delete.")
-  @Macro
-  private String opTypeField;
-
-  // Optional Fields
   @Name("zookeeperQuorum")
   @Nullable
   @Description("Zookeeper Quorum. By default it is set to 'localhost'")
@@ -88,34 +51,6 @@ public class HBaseSinkConfig extends ReferencePluginConfig {
   public HBaseSinkConfig(String referenceName) {
     super(referenceName);
   }
-
-  public String getTableName() {
-    return tableName;
-  }
-
-  public String getColFamily() {
-    return colFamily;
-  }
-
-  public Schema getSchema() {
-    try {
-      return Schema.parseJson(schema);
-    } catch (IOException ex) {
-      throw new IllegalArgumentException("Unable to parse output schema.");
-    }
-  }
-
-  public String getRowField() {
-    return rowField;
-  }
-
-  public String getOpTypeField() {return opTypeField;}
-
-  public String getBeforeField() {
-    return beforeField;
-  }
-
-  public String getAfterField() {return afterField;}
 
   @Nullable
   public String getZkQuorum() {
