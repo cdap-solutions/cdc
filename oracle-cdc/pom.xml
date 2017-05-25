@@ -64,6 +64,11 @@
       <version>${hydrator.version}</version>
     </dependency>
     <dependency>
+      <groupId>co.cask.hydrator</groupId>
+      <artifactId>core-plugins</artifactId>
+      <version>${hydrator.version}</version>
+    </dependency>
+    <dependency>
       <groupId>co.cask.cdap</groupId>
       <artifactId>cdap-api</artifactId>
       <version>${cdap.version}</version>

@@ -14,14 +14,14 @@
  * the License.
  */
 
-package co.cask.cdc.plugins.sink.hbase;
+package co.cask.cdc.plugins.sink.table;
 
 import co.cask.cdap.api.Config;
 import co.cask.cdap.api.annotation.Description;
-import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.data.schema.Schema;
-import co.cask.hydrator.common.ReferencePluginConfig;
+import co.cask.hydrator.plugin.common.BatchReadableWritableConfig;
+import co.cask.hydrator.plugin.common.Properties;
 
 import java.io.IOException;
 import javax.annotation.Nullable;
@@ -29,80 +29,43 @@ import javax.annotation.Nullable;
 /**
  * Plugin {@link Config} for Apache HBase.
  */
-public class HBaseSinkConfig extends ReferencePluginConfig {
+public class TableSinkConfig extends BatchReadableWritableConfig {
 
-  @Name("name")
-  @Description("Name of the HBase table to write to.")
-  @Macro
-  private String tableName;
+  @Name(Properties.Table.PROPERTY_SCHEMA)
+  @Description("schema of the table as a JSON Object. If the table does not already exist, one will be " +
+    "created with this schema, which will allow the table to be explored through Hive. If no schema is given, the " +
+    "table created will not be explorable.")
+  @Nullable
+  private String schemaStr;
 
-  @Name("columnFamily")
-  @Description("Name of the Column Family.")
-  @Macro
-  private String colFamily;
-
-  @Name("schema")
-  @Description("Output Schema for the HBase table.")
-  @Macro
-  private String schema;
-
-  @Name("rowField")
-  @Description("Field in the Schema that corresponds to a row key.")
-  @Macro
+  @Name(Properties.Table.PROPERTY_SCHEMA_ROW_FIELD)
+  @Description("The name of the record field that should be used as the row key when writing to the table.")
   private String rowField;
 
+  public TableSinkConfig(String name, String rowField, @Nullable String schemaStr) {
+    super(name);
+    this.rowField = rowField;
+    this.schemaStr = schemaStr;
+  }
+
+  // additional members required for CDC
   @Name("beforeField")
   @Description("Field in the Schema that corresponds to the fields to be discarded.")
-  @Macro
   private String beforeField;
 
   @Name("afterField")
   @Description("Field in the Schema that corresponds to the fields to be inserted.")
-  @Macro
   private String afterField;
 
   @Name("opTypeField")
   @Description("Field in the Schema that corresponds to the type of operation." +
     "\"I\" for insert. \"U\" for update. \"D\" for delete.")
-  @Macro
   private String opTypeField;
 
-  // Optional Fields
-  @Name("zookeeperQuorum")
+  // methods for getting private members
   @Nullable
-  @Description("Zookeeper Quorum. By default it is set to 'localhost'")
-  private String zkQuorum;
-
-  @Name("zookeeperClientPort")
-  @Nullable
-  @Macro
-  @Description("Zookeeper Client Port. By default it is set to 2181")
-  private String zkClientPort;
-
-  @Name("zookeeperParent")
-  @Nullable
-  @Macro
-  @Description("Parent Node of HBase in Zookeeper. Default to '/hbase'")
-  private String zkNodeParent;
-
-  public HBaseSinkConfig(String referenceName) {
-    super(referenceName);
-  }
-
-  public String getTableName() {
-    return tableName;
-  }
-
-  public String getColFamily() {
-    return colFamily;
-  }
-
-  public Schema getSchema() {
-    try {
-      return Schema.parseJson(schema);
-    } catch (IOException ex) {
-      throw new IllegalArgumentException("Unable to parse output schema.");
-    }
+  public String getSchemaStr() {
+    return schemaStr;
   }
 
   public String getRowField() {
@@ -117,18 +80,11 @@ public class HBaseSinkConfig extends ReferencePluginConfig {
 
   public String getAfterField() {return afterField;}
 
-  @Nullable
-  public String getZkQuorum() {
-    return zkQuorum;
-  }
-
-  @Nullable
-  public String getZkClientPort() {
-    return zkClientPort;
-  }
-
-  @Nullable
-  public String getZkNodeParent() {
-    return zkNodeParent;
+  public Schema getSchema() {
+    try {
+      return Schema.parseJson(schemaStr);
+    } catch (IOException ex) {
+      throw new IllegalArgumentException("Unable to parse output schema.");
+    }
   }
 }
