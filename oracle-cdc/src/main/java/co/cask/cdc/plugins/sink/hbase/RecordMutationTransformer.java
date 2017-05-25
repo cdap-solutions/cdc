@@ -25,84 +25,43 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Delete;
 
 import java.nio.ByteBuffer;
-import java.util.Map;
-import javax.annotation.Nullable;
+import java.util.List;
 
 /**
  *
  */
 public class RecordMutationTransformer {
-  private final String rowField;
-  private final String opTypeField;
-  private final String beforeField;
-  private final String afterField;
-  private final Schema outputSchema;
+  private final String columnFamily = "cdc";
 
-  public RecordMutationTransformer(String rowField, String opTypeField, String beforeField, String afterField,
-                                   @Nullable Schema outputSchema) {
-    if (outputSchema != null) {
-      validateSchema(rowField, outputSchema);
-    }
-    this.rowField = rowField;
-    this.opTypeField = opTypeField;
-    this.beforeField = beforeField;
-    this.afterField = afterField;
-    this.outputSchema = outputSchema;
-  }
-
-  private void validateSchema(String rowField, Schema outputSchema) {
-    if (outputSchema.getType() != Schema.Type.RECORD) {
-      throw new IllegalArgumentException(
-        String.format("Schema must be a record instead of '%s'.", outputSchema.getType()));
-    }
-    Schema.Field schemaRowField = outputSchema.getField(rowField);
-    if (schemaRowField == null) {
-      throw new IllegalArgumentException("Row field must be present in the schema");
-    }
-    if (!schemaRowField.getSchema().isSimpleOrNullableSimple()) {
-      throw new IllegalArgumentException("Row field must be a simple type");
+  public Mutation toMutation(StructuredRecord record) {
+    // a DML record
+    List<String> primaryKeys = record.get("primary_keys");
+    String opType = record.get("op_type");
+    StructuredRecord change = record.get("change");
+    String rowKey = "";
+    for(String primaryKey : primaryKeys) {
+      rowKey.concat(change.get(primaryKey).toString());
     }
 
-    for (Schema.Field field : outputSchema.getFields()) {
-      if (!field.getSchema().isSimpleOrNullableSimple()) {
-        throw new IllegalArgumentException(
-          "Schema must only contain simple fields (boolean, int, long, float, double, bytes, string)");
-      }
-    }
-  }
-
-  public Mutation toMutation(StructuredRecord record, String family) {
-    Schema recordSchema = record.getSchema();
-    Preconditions.checkArgument(recordSchema.getType() == Schema.Type.RECORD, "input must be a record.");
-
-    Schema.Field rowKeyField = getRowKeyField(recordSchema);
-    Schema.Field opTypeKeyField = getOpTypeKeyField(recordSchema);
-    Schema.Field beforeKeyField = getBeforeKeyField(recordSchema);
-    Schema.Field afterKeyField = getAfterKeyField(recordSchema);
-    Preconditions.checkArgument(rowKeyField != null, "Could not find row key field in record.");
-
-    // choose operation type, only supports insert and delete now
-    Put put;
-    Delete delete;
-    switch ((String) record.get(opTypeKeyField.getName())) {
+    // choose operation type
+    switch (opType) {
       case "I":
       case "U":
-        put = createPut(record, rowKeyField);
-        StructuredRecord insertMap = record.get(afterKeyField.getName());
-        for (Schema.Field field : insertMap.getSchema().getFields()) {
-          setPutField(put, family, field, insertMap);
+        Put put;
+        put = new Put(Bytes.toBytes(rowKey));
+        for (Schema.Field field : change.getSchema().getFields()) {
+          setPutField(put, columnFamily, field, change);
         }
         return put;
       case "D":
-        delete = createDelete(record, rowKeyField);
-        StructuredRecord deleteMap = record.get(beforeKeyField.getName());
-        for (Schema.Field field : deleteMap.getSchema().getFields()) {
-          delete.deleteColumn(Bytes.toBytes(family), Bytes.toBytes(field.getName()));
+        Delete delete;
+        delete = new Delete(Bytes.toBytes(rowKey));
+        for (Schema.Field field : change.getSchema().getFields()) {
+          delete.deleteColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(field.getName()));
         }
         return delete;
       default:
-        throw new IllegalArgumentException(opTypeKeyField.getName() +
-                                             "can only be \"I\" (insert), \"U\" (update), or \"D\" (delete)");
+        throw new IllegalArgumentException(opType + "can only be \"I\" (insert), \"U\" (update), or \"D\" (delete)");
     }
   }
 
@@ -149,68 +108,6 @@ public class RecordMutationTransformer {
     }
   }
 
-  @SuppressWarnings("ConstantConditions")
-  private Put createPut(StructuredRecord record, Schema.Field keyField) {
-    String keyFieldName = keyField.getName();
-    Object val = record.get(keyFieldName);
-    Preconditions.checkArgument(val != null, "Row key cannot be null.");
-
-    Schema.Type keyType = validateAndGetType(keyField);
-    switch (keyType) {
-      case BOOLEAN:
-        return new Put(Bytes.toBytes((Boolean) val));
-      case INT:
-        return new Put(Bytes.toBytes((Integer) val));
-      case LONG:
-        return new Put(Bytes.toBytes((Long) val));
-      case FLOAT:
-        return new Put(Bytes.toBytes((Float) val));
-      case DOUBLE:
-        return new Put(Bytes.toBytes((Double) val));
-      case BYTES:
-        if (val instanceof ByteBuffer) {
-          return new Put(Bytes.toBytes((ByteBuffer) val));
-        } else {
-          return new Put((byte[]) val);
-        }
-      case STRING:
-        return new Put(Bytes.toBytes((String) record.get(keyFieldName)));
-      default:
-        throw new IllegalArgumentException("Row key is of unsupported type " + keyType);
-    }
-  }
-
-  @SuppressWarnings("ConstantConditions")
-  private Delete createDelete(StructuredRecord record, Schema.Field keyField) {
-    String keyFieldName = keyField.getName();
-    Object val = record.get(keyFieldName);
-    Preconditions.checkArgument(val != null, "Row key cannot be null.");
-
-    Schema.Type keyType = validateAndGetType(keyField);
-    switch (keyType) {
-      case BOOLEAN:
-        return new Delete(Bytes.toBytes((Boolean) val));
-      case INT:
-        return new Delete(Bytes.toBytes((Integer) val));
-      case LONG:
-        return new Delete(Bytes.toBytes((Long) val));
-      case FLOAT:
-        return new Delete(Bytes.toBytes((Float) val));
-      case DOUBLE:
-        return new Delete(Bytes.toBytes((Double) val));
-      case BYTES:
-        if (val instanceof ByteBuffer) {
-          return new Delete(Bytes.toBytes((ByteBuffer) val));
-        } else {
-          return new Delete((byte[]) val);
-        }
-      case STRING:
-        return new Delete(Bytes.toBytes((String) record.get(keyFieldName)));
-      default:
-        throw new IllegalArgumentException("Row key is of unsupported type " + keyType);
-    }
-  }
-
   // get the non-nullable type of the field and check that it's a simple type.
   private Schema.Type validateAndGetType(Schema.Field field) {
     Schema.Type type;
@@ -222,25 +119,5 @@ public class RecordMutationTransformer {
     Preconditions.checkArgument(type.isSimpleType(),
                                 "only simple types are supported (boolean, int, long, float, double, bytes).");
     return type;
-  }
-
-  @Nullable
-  private Schema.Field getRowKeyField(Schema recordSchema) {
-    return recordSchema.getField(this.rowField);
-  }
-
-  @Nullable
-  private Schema.Field getOpTypeKeyField(Schema recordSchema) {
-    return recordSchema.getField(this.opTypeField);
-  }
-
-  @Nullable
-  private Schema.Field getBeforeKeyField(Schema recordSchema) {
-    return recordSchema.getField(this.beforeField);
-  }
-
-  @Nullable
-  private Schema.Field getAfterKeyField(Schema recordSchema) {
-    return recordSchema.getField(this.afterField);
   }
 }

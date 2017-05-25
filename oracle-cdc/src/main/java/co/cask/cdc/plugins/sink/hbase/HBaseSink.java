@@ -19,9 +19,11 @@ package co.cask.cdc.plugins.sink.hbase;
 import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
+import co.cask.cdap.api.common.Bytes;
 import co.cask.cdap.api.data.batch.Output;
 import co.cask.cdap.api.data.batch.OutputFormatProvider;
 import co.cask.cdap.api.data.format.StructuredRecord;
+import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.api.dataset.lib.KeyValue;
 import co.cask.cdap.etl.api.Emitter;
 import co.cask.cdap.etl.api.PipelineConfigurer;
@@ -38,7 +40,9 @@ import org.apache.hadoop.hbase.TableExistsException;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.Mutation;
+import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.mapreduce.KeyValueSerialization;
+import org.apache.hadoop.hbase.mapreduce.MultiTableOutputFormat;
 import org.apache.hadoop.hbase.mapreduce.MutationSerialization;
 import org.apache.hadoop.hbase.mapreduce.ResultSerialization;
 import org.apache.hadoop.hbase.mapreduce.TableOutputFormat;
@@ -58,17 +62,22 @@ import java.util.Map;
 @Plugin(type = BatchSink.PLUGIN_TYPE)
 @Name("CDCHBase Sink")
 @Description("Writes to Apache HBase tables.")
-public class HBaseSink extends ReferenceBatchSink<StructuredRecord, NullWritable, Mutation> {
+public class HBaseSink extends ReferenceBatchSink<StructuredRecord, ImmutableBytesWritable, Mutation> {
   private static final Logger LOG = LoggerFactory.getLogger(HBaseSink.class);
   private final HBaseSinkConfig hBaseSinkConfig;
+  private RecordMutationTransformer recordMutationTransformer;
 
   private Configuration conf;
-  private RecordMutationTransformer recordMutationTransformer;
   private HBaseAdmin hBaseAdmin;
 
   public HBaseSink(HBaseSinkConfig config) {
     super(config);
     this.hBaseSinkConfig = config;
+  }
+
+  private class TableConfig {
+    String name;
+
   }
 
   @Override
@@ -77,7 +86,6 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, NullWritable
     if (hBaseSinkConfig.containsMacro("zookeeperQuorum") || hBaseSinkConfig.containsMacro("name")) {
       return;
     }
-    createHBaseTable();
   }
 
   @Override
@@ -94,14 +102,13 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, NullWritable
     conf = job.getConfiguration();
     HBaseConfiguration.addHbaseResources(conf);
 
-    createHBaseTable();
     context.addOutput(Output.of(hBaseSinkConfig.getTableName(), new HBaseOutputFormatProvider(hBaseSinkConfig, conf)));
   }
 
-  private void createHBaseTable() {
+  private void createHBaseTable(String tableName) {
     try {
       hBaseAdmin = new HBaseAdmin(conf);
-      hBaseAdmin.createTable(new HTableDescriptor(TableName.valueOf(hBaseSinkConfig.getTableName())));
+      hBaseAdmin.createTable(new HTableDescriptor(TableName.valueOf(tableName)));
     } catch (TableExistsException ex) {
       LOG.debug("HBase Table {} already exists.", hBaseSinkConfig.getTableName());
     } catch (IOException ex) {
@@ -115,11 +122,11 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, NullWritable
 
     HBaseOutputFormatProvider(HBaseSinkConfig config, Configuration configuration) {
       this.conf = new HashMap<>();
-      conf.put(TableOutputFormat.OUTPUT_TABLE, config.getTableName());
+      // conf.put(TableOutputFormat.OUTPUT_TABLE, config.getTableName());
       String zkQuorum = !Strings.isNullOrEmpty(config.getZkQuorum()) ? config.getZkQuorum() : "localhost";
       String zkClientPort = !Strings.isNullOrEmpty(config.getZkClientPort()) ? config.getZkClientPort() : "2181";
       String zkNodeParent = !Strings.isNullOrEmpty(config.getZkNodeParent()) ? config.getZkNodeParent() : "/hbase";
-      conf.put(TableOutputFormat.QUORUM_ADDRESS, String.format("%s:%s:%s", zkQuorum, zkClientPort, zkNodeParent));
+      // conf.put(TableOutputFormat.QUORUM_ADDRESS, String.format("%s:%s:%s", zkQuorum, zkClientPort, zkNodeParent));
       String[] serializationClasses = {
         configuration.get("io.serializations"),
         MutationSerialization.class.getName(),
@@ -130,7 +137,7 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, NullWritable
 
     @Override
     public String getOutputFormatClassName() {
-      return TableOutputFormat.class.getName();
+      return MultiTableOutputFormat.class.getName();
     }
 
     @Override
@@ -142,16 +149,25 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, NullWritable
   @Override
   public void initialize(BatchRuntimeContext context) throws Exception {
     super.initialize(context);
-    recordMutationTransformer = new RecordMutationTransformer(hBaseSinkConfig.getRowField(),
-                                                              hBaseSinkConfig.getOpTypeField(),
-                                                              hBaseSinkConfig.getBeforeField(),
-                                                              hBaseSinkConfig.getAfterField(),
-                                                              null);
+    recordMutationTransformer = new RecordMutationTransformer();
   }
 
   @Override
-  public void transform(StructuredRecord input, Emitter<KeyValue<NullWritable, Mutation>> emitter) throws Exception {
-    Mutation mutation = recordMutationTransformer.toMutation(input, hBaseSinkConfig.getColFamily());
-    emitter.emit(new KeyValue<NullWritable, Mutation>(NullWritable.get(), mutation));
+  public void destroy() {
+    super.destroy();
+  }
+
+  @Override
+  public void transform(StructuredRecord input, Emitter<KeyValue<ImmutableBytesWritable, Mutation>> emitter) throws Exception {
+    Schema recordSchema = input.getSchema();
+    if(recordSchema.getRecordName().equals("DDLRecord")) {
+      assert(recordSchema.getField("table") != null);
+      createHBaseTable(input.get("table").toString());
+      // Do we have to emit anything after this?
+
+      return;
+    }
+    Mutation mutation = recordMutationTransformer.toMutation(input);
+    emitter.emit(new KeyValue<ImmutableBytesWritable, Mutation>(new ImmutableBytesWritable(Bytes.toBytes((String) input.get("table"))), mutation));
   }
 }
