@@ -59,7 +59,7 @@ import java.util.Map;
 @Plugin(type = BatchSink.PLUGIN_TYPE)
 @Name("CDCHBase Sink")
 @Description("Writes to Apache HBase tables.")
-public class HBaseSink extends ReferenceBatchSink<StructuredRecord, ImmutableBytesWritable, Mutation> {
+public class HBaseSink extends Spark<StructuredRecord, ImmutableBytesWritable, Mutation> {
   private static final Logger LOG = LoggerFactory.getLogger(HBaseSink.class);
   private final HBaseSinkConfig hBaseSinkConfig;
   private RecordMutationTransformer recordMutationTransformer;
@@ -129,7 +129,7 @@ public class HBaseSink extends ReferenceBatchSink<StructuredRecord, ImmutableByt
         configuration.get("io.serializations"),
         MutationSerialization.class.getName(),
         ResultSerialization.class.getName(),
-        KeyValueSerialization.class.getName() };
+        KeyValueSerialization.class.getName()};
       conf.put("io.serializations", StringUtils.arrayToString(serializationClasses));
     }
 

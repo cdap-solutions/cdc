@@ -43,7 +43,7 @@ public class MultiTableOutputFormatWithQuorumAddress extends MultiTableOutputFor
   public void setConf(Configuration otherConf) {
     this.conf = HBaseConfiguration.create(otherConf);
     String tableName = this.conf.get("hbase.mapred.outputtable");
-    if(tableName != null && tableName.length() > 0) {
+    if(tableName == null && tableName.length() > 0) {
       String address = this.conf.get("hbase.mapred.output.quorum");
       int zkClientPort = this.conf.getInt("hbase.mapred.output.quorum.port", 0);
       String serverClass = this.conf.get("hbase.mapred.output.rs.class");
@@ -61,14 +61,12 @@ public class MultiTableOutputFormatWithQuorumAddress extends MultiTableOutputFor
         if(zkClientPort != 0) {
           this.conf.setInt("hbase.zookeeper.property.clientPort", zkClientPort);
         }
-
-        this.LOG.info("Created table instance for " + tableName);
       } catch (IOException var8) {
         this.LOG.error(var8);
         throw new RuntimeException(var8);
       }
     } else {
-      throw new IllegalArgumentException("Must specify table name");
+      throw new IllegalArgumentException("A table");
     }
   }
 }
