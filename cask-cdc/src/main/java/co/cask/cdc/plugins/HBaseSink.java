@@ -23,10 +23,10 @@ import co.cask.cdap.api.common.Bytes;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.api.dataset.lib.KeyValue;
+import co.cask.cdap.api.spark.Spark;
 import co.cask.cdap.etl.api.Emitter;
 import co.cask.cdap.etl.api.PipelineConfigurer;
 import co.cask.cdap.etl.api.batch.BatchSink;
-import co.cask.cdap.etl.api.batch.BatchSinkContext;
 import co.cask.cdap.etl.api.batch.SparkCompute;
 import co.cask.cdap.etl.api.batch.SparkExecutionPluginContext;
 import co.cask.hydrator.common.batch.JobUtils;
@@ -42,6 +42,7 @@ import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.spark.api.java.JavaRDD;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +64,6 @@ public class HBaseSink extends SparkCompute<StructuredRecord, Mutation> {
   private Connection connection;
 
   public HBaseSink(HBaseSinkConfig config) {
-    super(config);
     this.hBaseSinkConfig = config;
   }
 
@@ -121,21 +121,26 @@ public class HBaseSink extends SparkCompute<StructuredRecord, Mutation> {
     hBaseTableUpdater = new HBaseTableUpdater();
   }
 
-  @Override
-  public void destroy() {
-    super.destroy();
+  public void destroy() throws IOException {
+    // super.destroy();
+    connection.close();
   }
 
+  // TODO figure out what JavaRDD does
   @Override
-  public void transform(StructuredRecord input, Emitter<KeyValue<ImmutableBytesWritable, Mutation>> emitter) throws Exception {
+  public JavaRDD<StructuredRecord> transform(SparkExecutionPluginContext input,
+                                             JavaRDD<StructuredRecord> javaRDD)
+    throws Exception {
     Schema recordSchema = input.getSchema();
     String tableName = input.get("table");
     if(recordSchema.getRecordName().equals("DDLRecord")) {
       assert(recordSchema.getField("table") != null);
       createHBaseTable(tableName);
     } else {
-      Mutation mutation = hBaseTableUpdater.updateHBaseTable(input, connection.getTable(TableName.valueOf(tableName));
-      emitter.emit(new KeyValue<ImmutableBytesWritable, Mutation>(new ImmutableBytesWritable(Bytes.toBytes((String) input.get("table"))), mutation));
+      hBaseTableUpdater.updateHBaseTable(input, connection.getTable(TableName.valueOf(tableName)));
     }
+
+    // TODO figure out what to return
+    return new JavaRDD<StructuredRecord>();
   }
 }
