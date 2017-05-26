@@ -20,20 +20,22 @@ import co.cask.cdap.api.common.Bytes;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import com.google.common.base.Preconditions;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Delete;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
 
 /**
  *
  */
-public class RecordMutationTransformer {
+public class HBaseTableUpdater {
   private final String columnFamily = "cdc";
 
-  public Mutation toMutation(StructuredRecord record) {
+  public void updateHBaseTable(StructuredRecord record, HTable table) throws IOException{
     // a DML record
     List<String> primaryKeys = record.get("primary_keys");
     String opType = record.get("op_type");
@@ -52,14 +54,16 @@ public class RecordMutationTransformer {
         for (Schema.Field field : change.getSchema().getFields()) {
           setPutField(put, columnFamily, field, change);
         }
-        return put;
+        table.put(put);
+        return;
       case "D":
         Delete delete;
         delete = new Delete(Bytes.toBytes(rowKey));
         for (Schema.Field field : change.getSchema().getFields()) {
-          delete.deleteColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(field.getName()));
+          delete.addColumn(Bytes.toBytes(columnFamily), Bytes.toBytes(field.getName()));
         }
-        return delete;
+        table.delete(delete);
+        return;
       default:
         throw new IllegalArgumentException(opType + "can only be \"I\" (insert), \"U\" (update), or \"D\" (delete)");
     }
@@ -71,7 +75,7 @@ public class RecordMutationTransformer {
     String query = field.getName();
     Object val = record.get(field.getName());
     if (field.getSchema().isNullable() && val == null) {
-      put.add(Bytes.toBytes(family), Bytes.toBytes(query), null);
+      put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), null);
       return;
     }
 
@@ -79,29 +83,29 @@ public class RecordMutationTransformer {
 
     switch (type) {
       case BOOLEAN:
-        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Boolean) val));
+        put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Boolean) val));
         break;
       case INT:
-        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Integer) val));
+        put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Integer) val));
         break;
       case LONG:
-        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Long) val));
+        put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Long) val));
         break;
       case FLOAT:
-        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Float) val));
+        put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Float) val));
         break;
       case DOUBLE:
-        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Double) val));
+        put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((Double) val));
         break;
       case BYTES:
         if (val instanceof ByteBuffer) {
-          put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((ByteBuffer) val));
+          put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((ByteBuffer) val));
         } else {
-          put.add(Bytes.toBytes(family), Bytes.toBytes(query), (byte[]) val);
+          put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), (byte[]) val);
         }
         break;
       case STRING:
-        put.add(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((String) val));
+        put.addColumn(Bytes.toBytes(family), Bytes.toBytes(query), Bytes.toBytes((String) val));
         break;
       default:
         throw new IllegalArgumentException("Field " + field.getName() + " is of unsupported type " + type);
