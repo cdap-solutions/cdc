@@ -1,0 +1,47 @@
+{
+  "metadata": {
+    "spec-version": "1.0"
+  },
+  "configuration-groups": [
+    {
+      "label": "HBase Configuration",
+      "properties": [
+        {
+          "widget-type" : "textbox",
+          "label" : "Reference Name",
+          "name" : "referenceName",
+          "description" : "Reference specifies the name to be used to track this external source"
+        }
+      ]
+    },
+    {
+      "label": "HBase Advanced Options",
+      "properties" : [
+        {
+          "widget-type": "textbox",
+          "label": "Zookeeper Quorum (DEFAULT: localhost)",
+          "name": "zkQuorum",
+          "widget-attributes" : {
+            "default" : "localhost"
+          }
+        },
+        {
+          "widget-type": "number",
+          "label": "Zookeeper Client Port (DEFAULT: 2181)",
+          "name": "zkClientPort",
+          "widget-attributes" : {
+            "default" : "2181"
+          }
+        },
+        {
+          "widget-type": "textbox",
+          "label": "Parent Node of HBase in Zookeeper. (DEFAULT: /hbase)",
+          "name": "compression-algo",
+          "widget-attributes" : {
+            "default": "/hbase"
+          }
+        }
+      ]
+    }
+  ]
+}
