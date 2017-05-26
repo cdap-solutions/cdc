@@ -1,55 +1,17 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Copyright © 2017 Cask Data, Inc.
-
-  Licensed under the Apache License, Version 2.0 (the "License"); you may not
-  use this file except in compliance with the License. You may obtain a copy of
-  the License at
-
-  http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-  License for the specific language governing permissions and limitations under
-  the License.
-  -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>co.cask.cdc</groupId>
-  <artifactId>cask-cdc</artifactId>
+  <artifactId>oracle-cdc</artifactId>
   <packaging>jar</packaging>
-  <version>1.0-SNAPSHOT</version>
-  <name>cask-cdc</name>
-
-  <licenses>
-    <license>
-      <name>The Apache Software License, Version 2.0</name>
-      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-      <distribution>repo</distribution>
-      <comments>A business-friendly OSS license</comments>
-    </license>
-  </licenses>
-
-  <developers>
-    <developer>
-      <name>Cask Data</name>
-      <email>cask-dev@googlegroups.com</email>
-      <organization>Cask Data, Inc.</organization>
-      <organizationUrl>http://www.cdap.io</organizationUrl>
-    </developer>
-  </developers>
-
-  <issueManagement>
-    <url>https://issues.cask.co</url>
-  </issueManagement>
-
+  <version>2.0-SNAPSHOT</version>
+  <name>oracle-cdc</name>
+  <url>http://maven.apache.org</url>
 
   <repositories>
     <repository>
-      <id>sonatype.release</id>
-      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
+      <id>sonatype</id>
+      <url>https://oss.sonatype.org/content/groups/public</url>
     </repository>
     <repository>
       <id>sonatype-snapshots</id>
@@ -62,32 +24,50 @@
   </repositories>
 
   <properties>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <cdap.version>4.2.0-SNAPSHOT</cdap.version>
-    <hydrator.version>1.6.1</hydrator.version>
-    <spark.version>1.6.1</spark.version>
-    <commons.version>1.2</commons.version>
-    <avro.version>1.8.1</avro.version>
+    <cdap.version>4.1.1</cdap.version>
+    <hydrator.version>1.6.0</hydrator.version>
+    <slf4j.version>1.7.5</slf4j.version>
+    <guava.version>19.0</guava.version>
+    <hadoop.version>2.3.0</hadoop.version>
     <kudu.version>1.2.0-cdh5.10.0</kudu.version>
+    <cask.common.version>0.7.1</cask.common.version>
+
+    <!-- These are the application template artifacts that this plugin will be available for. -->
+    <app.parents>
+      system:cdap-etl-batch,
+      system:cdap-data-pipeline,
+      system:cdap-data-streams
+    </app.parents>
+
+    <!-- this is here because project.basedir evaluates to null in the script build step -->
+    <main.basedir>${project.basedir}</main.basedir>
+
+    <!-- This is the version range for the app.parents that this plugin is valid for. Usually this will correspond with
+        the CDAP version, but not always. -->
+    <etl.versionRange>[3.3.0,10.0.0-SNAPSHOT)</etl.versionRange>
+
+
+    <!-- properties for script build step that creates the config files for the artifacts -->
     <widgets.dir>widgets</widgets.dir>
     <docs.dir>docs</docs.dir>
-    <kafka.version>0.8.2.2</kafka.version>
-    <hadoop.version>2.3.0</hadoop.version>
-    <!-- properties for script build step that creates the config files for the artifacts -->
-    <app.parents>system:cdap-data-streams[4.1.0-SNAPSHOT,5.0.0)</app.parents>
-    <main.basedir>${project.basedir}</main.basedir>
   </properties>
 
   <dependencies>
     <dependency>
-      <groupId>co.cask.cdap</groupId>
-      <artifactId>cdap-etl-api</artifactId>
-      <version>${cdap.version}</version>
+      <groupId>co.cask.common</groupId>
+      <artifactId>common-http</artifactId>
+      <version>${cask.common.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>co.cask.hydrator</groupId>
+      <artifactId>hydrator-common</artifactId>
+      <version>${hydrator.version}</version>
     </dependency>
     <dependency>
       <groupId>co.cask.cdap</groupId>
-      <artifactId>cdap-etl-api-spark</artifactId>
+      <artifactId>cdap-api</artifactId>
       <version>${cdap.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>co.cask.cdap</groupId>
@@ -96,95 +76,41 @@
     </dependency>
     <dependency>
       <groupId>co.cask.cdap</groupId>
-      <artifactId>hydrator-test</artifactId>
+      <artifactId>cdap-etl-api</artifactId>
       <version>${cdap.version}</version>
-      <scope>test</scope>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>co.cask.cdap</groupId>
-      <artifactId>cdap-data-pipeline</artifactId>
+      <artifactId>cdap-etl-api-spark</artifactId>
       <version>${cdap.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>jcl-over-slf4j</artifactId>
+      <version>${slf4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>${guava.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>3.8.1</version>
       <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>co.cask.cdap</groupId>
-      <artifactId>cdap-data-streams</artifactId>
-      <version>${cdap.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>co.cask.hydrator</groupId>
-      <artifactId>hydrator-common</artifactId>
-      <version>${hydrator.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.kafka</groupId>
-      <artifactId>kafka_2.10</artifactId>
-      <version>${kafka.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.avro</groupId>
       <artifactId>avro</artifactId>
-      <version>${avro.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-streaming-kafka_2.10</artifactId>
-      <version>${spark.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-streaming_2.10</artifactId>
-      <version>${spark.version}</version>
-      <scope>provided</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-core_2.10</artifactId>
-      <version>${spark.version}</version>
-      <scope>provided</scope>
-      <exclusions>
-        <exclusion>
-          <groupId>org.slf4j</groupId>
-          <artifactId>slf4j-log4j12</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>log4j</groupId>
-          <artifactId>log4j</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.apache.hadoop</groupId>
-          <artifactId>hadoop-client</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>com.esotericsoftware.reflectasm</groupId>
-          <artifactId>reflectasm</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.apache.curator</groupId>
-          <artifactId>curator-recipes</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.tachyonproject</groupId>
-          <artifactId>tachyon-client</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.scala-lang</groupId>
-          <artifactId>scala-compiler</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>org.eclipse.jetty.orbit</groupId>
-          <artifactId>javax.servlet</artifactId>
-        </exclusion>
-        <!--
-          Need to exclude this since Spark brings in an older version that makes
-          S3 not work in standalone. This doesn't affect distributed mode.
-        -->
-        <exclusion>
-          <groupId>net.java.dev.jets3t</groupId>
-          <artifactId>jets3t</artifactId>
-        </exclusion>
-      </exclusions>
+      <version>1.8.1</version>
     </dependency>
     <dependency>
       <groupId>org.apache.kudu</groupId>
@@ -336,55 +262,195 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>log4j</groupId>
+          <artifactId>log4j</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.avro</groupId>
+          <artifactId>avro</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.zookeeper</groupId>
+          <artifactId>zookeeper</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+        <exclusion>
+          <artifactId>jersey-core</artifactId>
+          <groupId>com.sun.jersey</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>jersey-json</artifactId>
+          <groupId>com.sun.jersey</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>jersey-server</artifactId>
+          <groupId>com.sun.jersey</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>servlet-api</artifactId>
+          <groupId>javax.servlet</groupId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.mortbay.jetty</groupId>
+          <artifactId>jetty</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.mortbay.jetty</groupId>
+          <artifactId>jetty-util</artifactId>
+        </exclusion>
+        <exclusion>
+          <artifactId>jasper-compiler</artifactId>
+          <groupId>tomcat</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>jasper-runtime</artifactId>
+          <groupId>tomcat</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>jsp-api</artifactId>
+          <groupId>javax.servlet.jsp</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>slf4j-api</artifactId>
+          <groupId>org.slf4j</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-mapreduce-client-core</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.inject.extensions</groupId>
+          <artifactId>guice-servlet</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.sun.jersey</groupId>
+          <artifactId>jersey-core</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.sun.jersey</groupId>
+          <artifactId>jersey-server</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.sun.jersey</groupId>
+          <artifactId>jersey-json</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.sun.jersey.contribs</groupId>
+          <artifactId>jersey-guice</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>javax.servlet</groupId>
+          <artifactId>servlet-api</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- Required by HBase CDC Sink -->
+    <!-- needed by TableOutputFormat, but TableOutputFormat is provided scope -->
+    <dependency>
+      <groupId>org.apache.zookeeper</groupId>
+      <artifactId>zookeeper</artifactId>
+      <version>3.4.5</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-server</artifactId>
+      <version>0.98.6.1-hadoop2</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.hbase</groupId>
+          <artifactId>hbase-hadoop-compat</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hbase</groupId>
+          <artifactId>hbase-hadoop2-compat</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-common</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-auth</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-client</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-mapreduce-client-core</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-hdfs</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-annotations</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-minicluster</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-core</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-testing-util</artifactId>
+      <version>0.98.6.1-hadoop2</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
-    <pluginManagement>
-      <plugins>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-compiler-plugin</artifactId>
-          <version>3.1</version>
-          <configuration>
-            <source>1.7</source>
-            <target>1.7</target>
-          </configuration>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.felix</groupId>
-          <artifactId>maven-bundle-plugin</artifactId>
-          <version>2.5.4</version>
-          <extensions>true</extensions>
-          <configuration>
-            <instructions>
-              <_exportcontents>org.apache.avro.*;com.google.common.*;co.cask.*;org.apache.spark.streaming.kafka.*;
-                kafka.serializer.*;kafka.common</_exportcontents>
-              <Embed-Dependency>*;inline=false;scope=compile</Embed-Dependency>
-              <Embed-Transitive>true</Embed-Transitive>
-              <Embed-Directory>lib</Embed-Directory>
-            </instructions>
-          </configuration>
-          <executions>
-            <execution>
-              <phase>package</phase>
-              <goals>
-                <goal>bundle</goal>
-              </goals>
-            </execution>
-          </executions>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-antrun-plugin</artifactId>
-          <version>1.7</version>
-          <executions>
-            <execution>
-              <id>create-artifact-config</id>
-              <phase>prepare-package</phase>
-              <configuration>
-                <target>
-                  <script language="javascript"> <![CDATA[
-
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>1.7</version>
+        <executions>
+          <execution>
+            <id>create-artifact-config</id>
+            <phase>prepare-package</phase>
+            <configuration>
+              <target>
+                <script language="javascript"><![CDATA[
                   // for some reason, project.basedir evaluates to null if we just get the property here.
                   // so we set main.basedir to project.basedir in the pom properties, then main.basedir is used here
                   // where it evaluates correctly for whatever reason
@@ -392,24 +458,19 @@
                   var targetDir = project.getProperty("project.build.directory");
                   var artifactId = project.getProperty("project.artifactId");
                   var version = project.getProperty("project.version");
-
                   var cfgFile = new java.io.File(targetDir, artifactId + "-" + version + ".json");
-
                   if (!cfgFile.exists()) {
                     cfgFile.createNewFile();
                   }
-
                   var parents = project.getProperty("app.parents").split(",");
+                  var parentVersions = project.getProperty("etl.versionRange");
                   var config = {
                     "parents": [ ],
                     "properties": {}
                   }
-                  for (i = 0; i < parents.length; i+=2) {
-                    // because name1[lo,hi],name2[lo,hi] gets split into "name1[lo", "hi]", "name2[lo", "hi]"
-                    // so we have to combine them again
-                    config.parents.push(parents[i] + "," + parents[i+1]);
+                  for (i = 0; i < parents.length; i++) {
+                    config.parents.push(parents[i].trim() + parentVersions);
                   }
-
                   // look in widgets directory for widget config for each plugin
                   var widgetsDir = new java.io.File(baseDir, project.getProperty("widgets.dir"));
                   if (widgetsDir.isDirectory()) {
@@ -429,7 +490,6 @@
                       }
                     }
                   }
-
                   // look in the docs directory for docs for each plugin
                   var docsDir = new java.io.File(baseDir, project.getProperty("docs.dir"));
                   if (docsDir.isDirectory()) {
@@ -448,36 +508,54 @@
                       }
                     }
                   }
-
                   var fw = new java.io.BufferedWriter(new java.io.FileWriter(cfgFile.getAbsoluteFile()));
                   fw.write(JSON.stringify(config, null, 2));
                   fw.close();
                 ]]></script>
-                </target>
-              </configuration>
-              <goals>
-                <goal>run</goal>
-              </goals>
-            </execution>
-          </executions>
-        </plugin>
-      </plugins>
-    </pluginManagement>
-    <plugins>
+              </target>
+            </configuration>
+            <goals>
+              <goal>run</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>2.14.1</version>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.1</version>
+        <configuration>
+          <source>1.7</source>
+          <target>1.7</target>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-antrun-plugin</artifactId>
+        <version>2.5.4</version>
+        <extensions>true</extensions>
+        <configuration>
+          <instructions>
+            <_exportcontents>
+              co.cask.*;
+              com.google.common.*;
+              org.apache.kudu.*;
+              org.apache.avro.*
+            </_exportcontents>
+            <Embed-Dependency>*;inline=false;scope=compile</Embed-Dependency>
+            <Embed-Transitive>true</Embed-Transitive>
+            <Embed-Directory>lib</Embed-Directory>
+          </instructions>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>bundle</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
-
 </project>

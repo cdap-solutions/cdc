@@ -14,13 +14,12 @@
  * the License.
  */
 
-package co.cask.cdc.plugins.hbase;
+package co.cask.cdc.plugins;
 
 import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.common.Bytes;
-import co.cask.cdap.api.data.batch.Output;
 import co.cask.cdap.api.data.batch.OutputFormatProvider;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
@@ -30,7 +29,7 @@ import co.cask.cdap.etl.api.PipelineConfigurer;
 import co.cask.cdap.etl.api.batch.BatchRuntimeContext;
 import co.cask.cdap.etl.api.batch.BatchSink;
 import co.cask.cdap.etl.api.batch.BatchSinkContext;
-import co.cask.hydrator.common.ReferenceBatchSink;
+import co.cask.cdap.etl.api.batch.SparkCompute;
 import co.cask.hydrator.common.batch.JobUtils;
 import com.google.common.base.Strings;
 import org.apache.hadoop.conf.Configuration;
@@ -59,7 +58,7 @@ import java.util.Map;
 @Plugin(type = BatchSink.PLUGIN_TYPE)
 @Name("CDCHBase Sink")
 @Description("Writes to Apache HBase tables.")
-public class HBaseSink extends Spark<StructuredRecord, ImmutableBytesWritable, Mutation> {
+public class HBaseSink extends SparkCompute<StructuredRecord, ImmutableBytesWritable, Mutation> {
   private static final Logger LOG = LoggerFactory.getLogger(HBaseSink.class);
   private final HBaseSinkConfig hBaseSinkConfig;
   private RecordMutationTransformer recordMutationTransformer;
