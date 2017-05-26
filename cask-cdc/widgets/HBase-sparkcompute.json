@@ -36,7 +36,7 @@
         {
           "widget-type": "textbox",
           "label": "Parent Node of HBase in Zookeeper. (DEFAULT: /hbase)",
-          "name": "compression-algo",
+          "name": "zkNodeParent",
           "widget-attributes" : {
             "default": "/hbase"
           }
