@@ -20,10 +20,8 @@ import co.cask.cdap.api.Config;
 import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
-import co.cask.cdap.api.data.schema.Schema;
 import co.cask.hydrator.common.ReferencePluginConfig;
 
-import java.io.IOException;
 import javax.annotation.Nullable;
 
 /**
