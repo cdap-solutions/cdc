@@ -91,12 +91,18 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
   @Override
   public void configurePipeline(PipelineConfigurer pipelineConfigurer) throws IllegalArgumentException {
     super.configurePipeline(pipelineConfigurer);
-    // TODO Add validations of the configurations
+    // Validate the configurations
+    conf.validate();
+
+    // Make sure that Golden Gate kafka topic only have single partition
+    SimpleConsumer consumer = new SimpleConsumer(conf.getHost(), conf.getPort(), 20 * 1000, 128 * 1024,
+                                                 "partitionLookup");
+    getPartitionId(consumer);
+
     if (conf.getMaxRatePerPartition() > 0) {
       Map<String, String> pipelineProperties = new HashMap<>();
       pipelineProperties.put("spark.streaming.kafka.maxRatePerPartition", conf.getMaxRatePerPartition().toString());
-      // TODO fix this
-      // pipelineConfigurer.setPipelineProperties(pipelineProperties);
+      pipelineConfigurer.setPipelineProperties(pipelineProperties);
     }
   }
 
@@ -145,10 +151,9 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
       public StructuredRecord call(String v1, Optional<StructuredRecord> value, State<Map<Long, String>> state)
         throws Exception {
         if (state.exists()) {
-          LOG.info("Current state is {}", state.get());
-        } else {
-          LOG.info("State does not exists");
+          LOG.debug("Current schema mapping is {}", state.get());
         }
+
         StructuredRecord input = value.get();
         byte[] message = input.get("message");
         String messageBody = new String(message, StandardCharsets.UTF_8);
@@ -170,7 +175,7 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
           }
           newState.put(schemaFingerPrint, messageBody);
           state.update(newState);
-          LOG.info("Current map state is {}", state.get());
+          LOG.debug("Schema mapping updated to {}", state.get());
 
           StructuredRecord.Builder builder = StructuredRecord.builder(DDL_SCHEMA_MESSAGE);
           builder.set("message", message);

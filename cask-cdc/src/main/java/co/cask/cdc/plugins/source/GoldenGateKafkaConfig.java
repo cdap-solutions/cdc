@@ -18,8 +18,15 @@ package co.cask.cdc.plugins.source;
 import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Macro;
 import co.cask.hydrator.common.ReferencePluginConfig;
+import kafka.javaapi.PartitionMetadata;
+import kafka.javaapi.TopicMetadata;
+import kafka.javaapi.TopicMetadataRequest;
+import kafka.javaapi.TopicMetadataResponse;
 
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import javax.annotation.Nullable;
 
 /**
@@ -83,5 +90,19 @@ public class GoldenGateKafkaConfig extends ReferencePluginConfig implements Seri
 
   public Integer getMaxRatePerPartition() {
     return maxRatePerPartition == null ? 1000 : maxRatePerPartition;
+  }
+
+  /**
+   * Method to validate the broker address which should be in the form 'host:port'.
+   * throws IllegalArgumentException if validation fails
+   */
+  public void validate() {
+    try {
+      getHost();
+      getPort();
+    } catch (Exception e) {
+      throw new IllegalArgumentException(String.format("Broker address '%s' should be in the form of 'host:port'.",
+                                                       broker));
+    }
   }
 }

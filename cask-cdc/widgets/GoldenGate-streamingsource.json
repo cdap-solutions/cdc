@@ -36,25 +36,5 @@
         }
       ]
     }
-  ],
-  "outputs": [
-    {
-      "name": "schema",
-      "widget-type": "schema",
-      "widget-attributes": {
-        "default-schema": {
-          "name": "etlSchemaBody",
-          "type": "record",
-          "fields": [
-            {
-              "name": "message",
-              "type": ["bytes", "null"]
-            }
-          ]
-        },
-        "schema-default-type": "string",
-        "property-watch": "format"
-      }
-    }
   ]
 }
