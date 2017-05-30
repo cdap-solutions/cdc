@@ -69,16 +69,63 @@
     <commons.version>1.2</commons.version>
     <avro.version>1.8.1</avro.version>
     <kudu.version>1.2.0-cdh5.10.0</kudu.version>
+    <hbase.version>1.2.0-cdh5.10.0</hbase.version>
     <widgets.dir>widgets</widgets.dir>
     <docs.dir>docs</docs.dir>
     <kafka.version>0.8.2.2</kafka.version>
-    <hadoop.version>2.3.0</hadoop.version>
+    <hadoop.version>2.6.0-cdh5.10.0</hadoop.version>
     <!-- properties for script build step that creates the config files for the artifacts -->
     <app.parents>system:cdap-data-streams[4.1.0-SNAPSHOT,5.0.0)</app.parents>
     <main.basedir>${project.basedir}</main.basedir>
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-common</artifactId>
+      <version>${hbase.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-annotations</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-common</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-core</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-client</artifactId>
+      <version>${hbase.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>io.netty</groupId>
+          <artifactId>netty</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-auth</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-common</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-annotations</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
     <dependency>
       <groupId>co.cask.cdap</groupId>
       <artifactId>cdap-etl-api</artifactId>
@@ -262,6 +309,18 @@
       </exclusions>
     </dependency>
     <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-mapreduce-client-core</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>org.apache.kudu</groupId>
       <artifactId>kudu-mapreduce</artifactId>
       <version>${kudu.version}</version>
@@ -357,7 +416,9 @@
           <extensions>true</extensions>
           <configuration>
             <instructions>
-              <_exportcontents>org.apache.avro.*;com.google.common.*;co.cask.*;org.apache.spark.streaming.kafka.*;
+              <_exportcontents>org.apache.hadoop.hbase;org.apache.commons.lang;
+                org.apache.hadoop.hbase.mapreduce.*;
+                org.apache.hadoop.hbase.client.*;org.apache.avro.*;com.google.common.*;co.cask.*;org.apache.spark.streaming.kafka.*;
                 kafka.serializer.*;kafka.common</_exportcontents>
               <Embed-Dependency>*;inline=false;scope=compile</Embed-Dependency>
               <Embed-Transitive>true</Embed-Transitive>

@@ -102,7 +102,7 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
     if (conf.getMaxRatePerPartition() > 0) {
       Map<String, String> pipelineProperties = new HashMap<>();
       pipelineProperties.put("spark.streaming.kafka.maxRatePerPartition", conf.getMaxRatePerPartition().toString());
-      pipelineConfigurer.setPipelineProperties(pipelineProperties);
+      // pipelineConfigurer.setPipelineProperties(pipelineProperties);
     }
   }
 
