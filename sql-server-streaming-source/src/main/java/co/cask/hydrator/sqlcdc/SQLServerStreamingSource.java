@@ -75,11 +75,12 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
 
     List<TableInformation> ctEnabledTables = getCTEnabledTables(connection);
+    long currentTrackingVersion = getCurrentTrackingVersion(connection);
 
     JavaDStream<StructuredRecord> structuredRecordJavaDStream =
       JavaDStream.fromDStream(new CDCInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
                                                   getConnectionString(), conf.username, conf
-                                                    .password, ctEnabledTables), tag);
+                                                    .password, ctEnabledTables, currentTrackingVersion), tag);
 
     structuredRecordJavaDStream.map(new Function<StructuredRecord, StructuredRecord>() {
       @Override
@@ -153,5 +154,12 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     throw new RuntimeException(String.format("Change Tracking is not enabled on the specified table '%s'. Please " +
                                                "enable it first.", name));
   }
-
+  private long getCurrentTrackingVersion(Connection connection) throws SQLException {
+    ResultSet resultSet = connection.createStatement().executeQuery("SELECT CHANGE_TRACKING_CURRENT_VERSION()");
+    long changeVersion = 0;
+    while(resultSet.next()) {
+      changeVersion = resultSet.getLong(1);
+    }
+    return changeVersion;
+  }
 }

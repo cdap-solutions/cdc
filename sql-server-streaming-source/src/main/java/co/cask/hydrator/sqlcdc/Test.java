@@ -28,9 +28,10 @@ public class Test {
   public static void main(String[] args) {
     try {
       Class.forName(SQLServerDriver.class.getName());
-      String url = "jdbc:sqlserver://35.184.27.192:1433;DatabaseName=cttest";
+      String url = "jdbc:sqlserver://35.184.27.192:1433;DatabaseName=ctest";
       Connection connection = DriverManager.getConnection(url, "sa", "Realtime!23");
       String tableName = "ctone";
+      System.out.println(getCurrentTrackingVersion(connection));
 
     } catch (Exception e) {
       e.printStackTrace();
@@ -80,4 +81,12 @@ public class Test {
   }
 
 
+  private static long getCurrentTrackingVersion(Connection connection) throws SQLException {
+    ResultSet resultSet = connection.createStatement().executeQuery("SELECT CHANGE_TRACKING_CURRENT_VERSION()");
+    long changeVersion = 0;
+    while(resultSet.next()) {
+      changeVersion = resultSet.getLong(1);
+    }
+    return changeVersion;
+  }
 }

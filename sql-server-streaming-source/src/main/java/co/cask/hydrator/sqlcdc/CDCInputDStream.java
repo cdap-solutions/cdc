@@ -31,9 +31,10 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
   // transient to avoid serialization since SparkContext is not serializable
   private transient SparkContext sparkContext;
   private SQLServerConnection dbConnection;
+  private long currentTrackingVersion;
 
   CDCInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
-                  String password, List<TableInformation> tableInformations) {
+                  String password, List<TableInformation> tableInformations, long currentTrackingVersion) {
     super(ssc, tag);
     this.tag = tag;
     this.sparkContext = ssc.sparkContext();
@@ -41,6 +42,7 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     this.username = username;
     this.password = password;
     this.tableInformations = tableInformations;
+    this.currentTrackingVersion = currentTrackingVersion;
   }
 
   @Override
@@ -71,7 +73,9 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
 
     String stmt = String.format("SELECT [CT].[SYS_CHANGE_VERSION], [CT].[SYS_CHANGE_CREATION_VERSION], " +
                                   "[CT].[SYS_CHANGE_OPERATION], %s, %s FROM [%s] as [CI] RIGHT OUTER JOIN " +
-                                  "CHANGETABLE (CHANGES [%s], %s) as [CT] on %s WHERE ? = ? ORDER BY [CT]" +
+                                  "CHANGETABLE (CHANGES [%s], %s) as [CT] on %s where [CT]" +
+                                  ".[SYS_CHANGE_CREATION_VERSION] > ? " +
+                                  "and [CT].[SYS_CHANGE_CREATION_VERSION] <= ? ORDER BY [CT]" +
                                   ".[SYS_CHANGE_VERSION]",
                                 joinSelect("CT", tableInformation.getPrimaryKeys()),
                                 joinSelect("CI", tableInformation.getValueColumnNames()),
@@ -80,7 +84,7 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
 
     System.out.println("Query String: " + stmt);
     //TODO Currently we are not partitioning the data. We should partition it for scalability
-    return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1,
+    return new JdbcRDD<>(sparkC, dbConnection, stmt, 0, currentTrackingVersion, 1,
                          new ResultSetToStructureRecord(tableInformation.getSchemaName(), tableInformation.getName()),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }

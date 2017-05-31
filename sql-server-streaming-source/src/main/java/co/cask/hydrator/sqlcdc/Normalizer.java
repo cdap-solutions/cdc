@@ -6,6 +6,7 @@ import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.etl.api.Emitter;
 import co.cask.cdap.etl.api.Transform;
+import co.cask.cdap.etl.api.TransformContext;
 import com.google.common.collect.Sets;
 import com.google.gson.Gson;
 import org.slf4j.Logger;
@@ -31,6 +32,11 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
                                                                                                        .STRING));
   private static final Schema.Field OP_TYPE_SCHEMA_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
 
+  @Override
+  public void initialize(TransformContext context) throws Exception {
+    super.initialize(context);
+    LOG.info("--------------------------------------------------------------------");
+  }
 
   @Override
   public void transform(StructuredRecord input, Emitter<StructuredRecord> emitter) throws Exception {
