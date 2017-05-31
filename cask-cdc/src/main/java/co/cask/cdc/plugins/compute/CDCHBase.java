@@ -41,6 +41,7 @@ import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.mapreduce.Job;
@@ -101,6 +102,7 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
         }
 
         Configuration conf = job.getConfiguration();
+
         String zkQuorum = !Strings.isNullOrEmpty(config.zkQuorum) ? config.zkQuorum : "localhost";
         String zkClientPort = !Strings.isNullOrEmpty(config.zkClientPort) ? config.zkClientPort : "2181";
         String zkNodeParent = !Strings.isNullOrEmpty(config.zkNodeParent) ? config.zkNodeParent : "/hbase";
@@ -109,7 +111,7 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
         conf.set("zookeeper.znode.parent", zkNodeParent);
         LOG.info("Zookeeper quorum to HBASEXXX {}", String.format("%s:%s:%s", zkQuorum, zkClientPort, zkNodeParent));
 
-        try (Connection connection = ConnectionFactory.createConnection(HBaseConfiguration.addHbaseResources(conf));
+        try (Connection connection = ConnectionFactory.createConnection(conf);
              Admin hBaseAdmin = connection.getAdmin()) {
           while (structuredRecordIterator.hasNext()) {
             StructuredRecord input = structuredRecordIterator.next();
@@ -118,7 +120,8 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
             if (input.getSchema().getRecordName().equals("DDLRecord")) {
               createHBaseTable(hBaseAdmin, (String) input.get("table"));
             } else {
-              Table table = connection.getTable(TableName.valueOf((String) input.get("table")));
+              // Table table = connection.getTable(TableName.valueOf((String) input.get("table")));
+              Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf((String) input.get("table")));
               updateHBaseTable(table, input);
             }
 
@@ -156,10 +159,14 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
 
   private void createHBaseTable(Admin admin, String tableName) throws IOException {
     LOG.info("Creating HBase table {}.", tableName);
-    if (!admin.tableExists(TableName.valueOf(tableName))) {
-      HTableDescriptor descriptor = new HTableDescriptor(TableName.valueOf(tableName));
-      descriptor.addFamily(new HColumnDescriptor(CDC_COLUMN_FAMILY));
-      admin.createTable(descriptor);
+    try {
+      if (!admin.tableExists(TableName.valueOf(tableName))) {
+        HTableDescriptor descriptor = new HTableDescriptor(TableName.valueOf(tableName));
+        descriptor.addFamily(new HColumnDescriptor(CDC_COLUMN_FAMILY));
+        admin.createTable(descriptor);
+      }
+    } catch (Throwable t) {
+      LOG.error("exception occurred.", t);
     }
   }
 
