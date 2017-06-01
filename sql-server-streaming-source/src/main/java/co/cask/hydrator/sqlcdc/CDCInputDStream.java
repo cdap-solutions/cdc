@@ -8,11 +8,16 @@ import org.apache.spark.rdd.RDD;
 import org.apache.spark.streaming.StreamingContext;
 import org.apache.spark.streaming.Time;
 import org.apache.spark.streaming.dstream.InputDStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import scala.Option;
 import scala.collection.JavaConversions;
 import scala.reflect.ClassManifestFactory$;
 import scala.reflect.ClassTag;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedList;
@@ -23,6 +28,7 @@ import java.util.Set;
  * A {@link InputDStream} which reads cdc data from SQL Server and emits {@link StructuredRecord}
  */
 public class CDCInputDStream extends InputDStream<StructuredRecord> {
+  private static final Logger LOG = LoggerFactory.getLogger(SQLServerStreamingSource.class);
   private ClassTag<StructuredRecord> tag;
   private String connection;
   private String username;
@@ -45,11 +51,29 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     this.currentTrackingVersion = currentTrackingVersion;
   }
 
+  CDCInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
+                  String password, List<TableInformation> tableInformations) {
+    super(ssc, tag);
+    this.tag = tag;
+    this.sparkContext = ssc.sparkContext();
+    this.connection = connection;
+    this.username = username;
+    this.password = password;
+    this.tableInformations = tableInformations;
+    this.currentTrackingVersion = 0;
+  }
+
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
+    long prev = currentTrackingVersion;
+    try {
+      currentTrackingVersion = getCurrentTrackingVersion(dbConnection.apply());
+    } catch (SQLException e) {
+      e.printStackTrace();
+    }
     List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
     for (TableInformation tableInformation : tableInformations) {
-      changeRDDs.add(getChangeData(tableInformation));
+      changeRDDs.add(getChangeData(tableInformation, prev, currentTrackingVersion));
     }
     RDD<StructuredRecord> changes = sparkContext.union(JavaConversions.asScalaBuffer(changeRDDs), tag);
     return Option.apply(changes);
@@ -67,7 +91,7 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     // Also no need to close the dbconnection as JdbcRDD takes care of closing it
   }
 
-  private RDD<StructuredRecord> getChangeData(TableInformation tableInformation) {
+  private RDD<StructuredRecord> getChangeData(TableInformation tableInformation, long prev, long currentTrackingVersion) {
 
     final SparkContext sparkC = sparkContext;
 
@@ -82,9 +106,10 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
                                 tableInformation.getName(), tableInformation.getName(), 0, joinCriteria
                                   (tableInformation.getPrimaryKeys()));
 
-    System.out.println("Query String: " + stmt);
+    LOG.info("Query String: {}" + stmt);
+    LOG.info("### the prev {} curr {}", prev, currentTrackingVersion);
     //TODO Currently we are not partitioning the data. We should partition it for scalability
-    return new JdbcRDD<>(sparkC, dbConnection, stmt, 0, currentTrackingVersion, 1,
+    return new JdbcRDD<>(sparkC, dbConnection, stmt, prev, this.currentTrackingVersion, 1,
                          new ResultSetToStructureRecord(tableInformation.getSchemaName(), tableInformation.getName()),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }
@@ -111,5 +136,15 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     }
 
     return Joiner.on(", ").join(selectColumns);
+  }
+
+  private long getCurrentTrackingVersion(Connection connection) throws SQLException {
+    ResultSet resultSet = connection.createStatement().executeQuery("SELECT CHANGE_TRACKING_CURRENT_VERSION()");
+    long changeVersion = 0;
+    while(resultSet.next()) {
+      changeVersion = resultSet.getLong(1);
+    }
+    connection.close();
+    return changeVersion;
   }
 }
