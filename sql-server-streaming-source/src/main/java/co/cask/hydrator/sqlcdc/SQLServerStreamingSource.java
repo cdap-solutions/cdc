@@ -10,9 +10,12 @@ import co.cask.cdap.etl.api.streaming.StreamingSource;
 import co.cask.hydrator.plugin.DBUtils;
 import com.microsoft.sqlserver.jdbc.SQLServerDriver;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.streaming.api.java.JavaDStream;
+import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.Tuple2;
 import scala.reflect.ClassTag;
 
 import java.sql.Connection;
@@ -35,10 +38,6 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
   private static final Logger LOG = LoggerFactory.getLogger(SQLServerStreamingSource.class);
 
   private final ConnectionConfig conf;
-
-  public enum CDCElement {
-    DATABASE, TABLE
-  }
 
   public SQLServerStreamingSource(ConnectionConfig conf) {
     this.conf = conf;
@@ -64,14 +63,8 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
       throw e;
     }
 
-    // check that CDC is enabled on the database and the given table
-    checkCTEnabled(connection, CDCElement.DATABASE, conf.dbName);
-//    checkCTEnabled(connection, CDCElement.TABLE, conf.tableName);
-
-    // get the capture instance detail of the the given table. We need this because this contains information about
-    // the cdc table like its name and captured columns
-//    CaptureInstanceDetail captureInstanceDetails = getCaptureInstanceDetails(connection, conf.tableName);
-//    LOG.info("The captured instance details {} for table {}", captureInstanceDetails, conf.tableName);
+    // check that CDC is enabled on the database
+    checkCTEnabled(connection, conf.dbName);
 
     ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
 
@@ -151,7 +144,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     return tableInformations;
   }
 
-  private void checkCTEnabled(Connection connection, SQLServerStreamingSource.CDCElement type, String name)
+  private void checkCTEnabled(Connection connection, String name)
     throws SQLException {
     // database
     String query = "SELECT * FROM sys.change_tracking_databases WHERE database_id=DB_ID(?)";

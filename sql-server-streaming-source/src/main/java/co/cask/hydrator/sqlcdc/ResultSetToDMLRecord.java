@@ -25,12 +25,12 @@ import javax.annotation.Nullable;
  * A serializable class to allow invoking {@link scala.Function1} from Java. The function converts {@link ResultSet}
  * to {@link StructuredRecord}
  */
-public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
+public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
 
   private final String schemaName;
   private final String tableName;
 
-  public ResultSetToStructureRecord(String schemaName, String tableName) {
+  public ResultSetToDMLRecord(String schemaName, String tableName) {
     this.schemaName = schemaName;
     this.tableName = tableName;
   }
