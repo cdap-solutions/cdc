@@ -33,7 +33,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.gson.Gson;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
@@ -41,7 +40,6 @@ import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.mapreduce.Job;
@@ -52,8 +50,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import javax.annotation.Nullable;
 
 /**
@@ -79,7 +79,13 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
   @Override
   public JavaRDD<StructuredRecord> transform(SparkExecutionPluginContext context,
                                              JavaRDD<StructuredRecord> javaRDD) throws Exception {
-
+    // get local node configurations and pass them as a Map
+    Iterator<Map.Entry<String, String>> iterator = javaRDD.context().hadoopConfiguration().iterator();
+    final Map<String, String> configs = new HashMap<>();
+    while (iterator.hasNext()) {
+      Map.Entry<String, String> next = iterator.next();
+      configs.put(next.getKey(), next.getValue());
+    }
     LOG.info("HBase returning from here");
     return javaRDD.mapPartitions(new FlatMapFunction<Iterator<StructuredRecord>, StructuredRecord>() {
 
@@ -103,6 +109,7 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
 
         Configuration conf = job.getConfiguration();
 
+        // initialize the zookeeper quorum settings
         String zkQuorum = !Strings.isNullOrEmpty(config.zkQuorum) ? config.zkQuorum : "localhost";
         String zkClientPort = !Strings.isNullOrEmpty(config.zkClientPort) ? config.zkClientPort : "2181";
         String zkNodeParent = !Strings.isNullOrEmpty(config.zkNodeParent) ? config.zkNodeParent : "/hbase";
@@ -110,6 +117,13 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
         conf.set("hbase.zookeeper.property.clientPort", zkClientPort);
         conf.set("zookeeper.znode.parent", zkNodeParent);
         LOG.info("Zookeeper quorum to HBASEXXX {}", String.format("%s:%s:%s", zkQuorum, zkClientPort, zkNodeParent));
+
+        // now we put the node configurations in conf
+        Iterator<Map.Entry<String,String>> configIterator = configs.entrySet().iterator();
+        while (configIterator.hasNext()) {
+          Map.Entry<String,String> nextConfig = configIterator.next();
+          conf.set(nextConfig.getKey(), nextConfig.getValue());
+        }
 
         try (Connection connection = ConnectionFactory.createConnection(conf);
              Admin hBaseAdmin = connection.getAdmin()) {
@@ -271,21 +285,6 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
 
     public CDCHBaseConfig(String referenceName) {
       super(referenceName);
-    }
-
-    @Nullable
-    public String getZkQuorum() {
-      return zkQuorum;
-    }
-
-    @Nullable
-    public String getZkClientPort() {
-      return zkClientPort;
-    }
-
-    @Nullable
-    public String getZkNodeParent() {
-      return zkNodeParent;
     }
   }
 }
