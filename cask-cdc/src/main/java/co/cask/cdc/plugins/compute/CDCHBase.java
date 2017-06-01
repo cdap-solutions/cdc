@@ -50,6 +50,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -134,7 +135,6 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
             if (input.getSchema().getRecordName().equals("DDLRecord")) {
               createHBaseTable(hBaseAdmin, (String) input.get("table"));
             } else {
-              // Table table = connection.getTable(TableName.valueOf((String) input.get("table")));
               Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf((String) input.get("table")));
               updateHBaseTable(table, input);
             }
@@ -184,10 +184,14 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
     }
   }
 
-  private byte[] getRowKey(List<String> primaryKeys) {
+  private byte[] getRowKey(List<String> primaryKeys, StructuredRecord change) {
     // TODO make sure the primary keys are always in same order
-    String joinedKey = Joiner.on(":").join(primaryKeys);
-    return Bytes.toBytes(joinedKey);
+    List<String> primaryValues = new ArrayList<>();
+    for(String primaryKey : primaryKeys) {
+      primaryValues.add(change.get(primaryKey).toString());
+    }
+    String joinedValue = Joiner.on(":").join(primaryValues);
+    return Bytes.toBytes(joinedValue);
   }
 
   // get the non-nullable type of the field and check that it's a simple type.
@@ -242,10 +246,15 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
     List<String> primaryKeys = input.get("primary_keys");
     StructuredRecord change = input.get("change");
     List<Schema.Field> fields = Schema.parseJson((String)input.get("schema")).getFields();
+    LOG.info("Operation type is {}", operationType);
+    for(String pKey: primaryKeys) {
+      LOG.info("prim key : {}", pKey);
+    }
+
     switch (operationType) {
       case "I":
       case "U":
-        Put put = new Put(getRowKey(primaryKeys));
+        Put put = new Put(getRowKey(primaryKeys, change));
         for (Schema.Field field : fields) {
           // Normalizer always passes the full schema, however it is possible that only few fields are provided
           // Check if the field is actually provided
@@ -256,7 +265,7 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
         table.put(put);
         break;
       case "D":
-        Delete delete = new Delete(getRowKey(primaryKeys));
+        Delete delete = new Delete(getRowKey(primaryKeys, change));
         table.delete(delete);
         break;
       default:
