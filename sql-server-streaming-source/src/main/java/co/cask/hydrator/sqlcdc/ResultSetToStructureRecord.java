@@ -49,7 +49,7 @@ public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, Str
     List<Schema.Field> schemaFields = new ArrayList<>();
     schemaFields.add(Schema.Field.of("tableName", Schema.of(Schema.Type.STRING)));
     schemaFields.addAll(getNullableSchema(DBUtils.getSchemaFields(resultSet)));
-    Schema schema = Schema.recordOf("changeRecord", schemaFields);
+    Schema schema = Schema.recordOf("DMLRecord", schemaFields);
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
     // 0 th field is tableName
     recordBuilder.set("tableName", Joiner.on(".").join(schemaName, tableName));
@@ -75,7 +75,7 @@ public class ResultSetToStructureRecord extends AbstractFunction1<ResultSet, Str
   //TODO: This function is taken from DatabaseSource. We should move it to the DBUtil class in Datasbase plugin and
   // use it here.
   @Nullable
-  private Object transformValue(int sqlColumnType, ResultSet resultSet, String fieldName) throws SQLException {
+  static Object transformValue(int sqlColumnType, ResultSet resultSet, String fieldName) throws SQLException {
     Object original = resultSet.getObject(fieldName);
     if (original != null) {
       switch (sqlColumnType) {

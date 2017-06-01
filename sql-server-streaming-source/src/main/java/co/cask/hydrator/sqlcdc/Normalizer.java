@@ -40,33 +40,40 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
 
   @Override
   public void transform(StructuredRecord input, Emitter<StructuredRecord> emitter) throws Exception {
-    LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
-    LOG.info("The op type is {}", input.get("SYS_CHANGE_OPERATION"));
-    String operation = input.get("SYS_CHANGE_OPERATION");
-    StructuredRecord.Builder recordBuilder;
-    StructuredRecord record;
-    if (operation.equalsIgnoreCase("D")) {
-      // delete
-      recordBuilder = getInsertRecord(input);
-      record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "D").build();
-      LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
-      emitter.emit(record);
-    } else if (operation.equalsIgnoreCase("I")) {
-      // insert
-      recordBuilder = getInsertRecord(input);
-      record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "I").build();
-      LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
-      emitter.emit(record);
-    } else if (operation.equalsIgnoreCase("U")) {
-      // update
-      recordBuilder = getInsertRecord(input);
-      record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "U").build();
-      LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
-      emitter.emit(record);
-    } else {
-      throw new IllegalArgumentException("Unknown type" + operation);
+    if (input.getSchema().getRecordName().equals("DMLRecord")) {
+      LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
+      LOG.info("The op type is {}", input.get("SYS_CHANGE_OPERATION"));
+      String operation = input.get("SYS_CHANGE_OPERATION");
+      StructuredRecord.Builder recordBuilder;
+      StructuredRecord record;
+      if (operation.equalsIgnoreCase("D")) {
+        // delete
+        recordBuilder = getInsertRecord(input);
+        record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "D").build();
+        LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
+        emitter.emit(record);
+      } else if (operation.equalsIgnoreCase("I")) {
+        // insert
+        recordBuilder = getInsertRecord(input);
+        record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "I").build();
+        LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
+        emitter.emit(record);
+      } else if (operation.equalsIgnoreCase("U")) {
+        // update
+        recordBuilder = getInsertRecord(input);
+        record = recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), "U").build();
+        LOG.info("Output StructuredRecord is {}", GSON.toJson(record));
+        emitter.emit(record);
+      } else {
+        throw new IllegalArgumentException("Unknown type" + operation);
 
+      }
+    } else if (input.getSchema().getRecordName().equals("DDLRecord")) {
+      LOG.info("### Input DDL is {}", GSON.toJson(input));
+    } else {
+      throw new IllegalArgumentException("Unknown Record " + input.getSchema().getRecordName());
     }
+
   }
 
   private StructuredRecord.Builder getInsertRecord(StructuredRecord input) {

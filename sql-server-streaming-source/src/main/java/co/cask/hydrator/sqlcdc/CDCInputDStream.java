@@ -1,6 +1,7 @@
 package co.cask.hydrator.sqlcdc;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
+import co.cask.cdap.api.data.schema.Schema;
 import com.google.common.base.Joiner;
 import org.apache.spark.SparkContext;
 import org.apache.spark.rdd.JdbcRDD;
@@ -29,6 +30,9 @@ import java.util.Set;
  */
 public class CDCInputDStream extends InputDStream<StructuredRecord> {
   private static final Logger LOG = LoggerFactory.getLogger(SQLServerStreamingSource.class);
+  private static final Schema DDL_SCHEMA = Schema.recordOf("DDLRecord",
+                                                           Schema.Field.of("table", Schema.of(Schema.Type.STRING)),
+                                                           Schema.Field.of("schema", Schema.of(Schema.Type.STRING)));
   private ClassTag<StructuredRecord> tag;
   private String connection;
   private String username;
@@ -65,13 +69,18 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
 
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
+    List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
+    for (TableInformation tableInformation : tableInformations) {
+      changeRDDs.add(getColumnns(tableInformation));
+    }
+
     long prev = currentTrackingVersion;
     try {
       currentTrackingVersion = getCurrentTrackingVersion(dbConnection.apply());
     } catch (SQLException e) {
       e.printStackTrace();
     }
-    List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
+
     for (TableInformation tableInformation : tableInformations) {
       changeRDDs.add(getChangeData(tableInformation, prev, currentTrackingVersion));
     }
@@ -138,10 +147,22 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     return Joiner.on(", ").join(selectColumns);
   }
 
+  private JdbcRDD<StructuredRecord> getColumnns(TableInformation tableInformation) {
+
+    final SparkContext sparkC = sparkContext;
+
+    String stmt = String.format("SELECT TOP 1 * FROM [%s].[%s] where ?=?", tableInformation.getSchemaName(),
+                                tableInformation.getName());
+
+    return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1,
+                         new ResultSetToDDLRecord(tableInformation.getSchemaName(), tableInformation.getName()),
+                         ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
+  }
+
   private long getCurrentTrackingVersion(Connection connection) throws SQLException {
     ResultSet resultSet = connection.createStatement().executeQuery("SELECT CHANGE_TRACKING_CURRENT_VERSION()");
     long changeVersion = 0;
-    while(resultSet.next()) {
+    while (resultSet.next()) {
       changeVersion = resultSet.getLong(1);
     }
     connection.close();

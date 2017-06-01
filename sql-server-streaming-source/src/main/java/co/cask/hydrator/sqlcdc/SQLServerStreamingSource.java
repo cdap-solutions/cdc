@@ -81,6 +81,8 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
                                                   getConnectionString(), conf.username, conf
                                                     .password, ctEnabledTables), tag);
 
+
+
     structuredRecordJavaDStream.map(new Function<StructuredRecord, StructuredRecord>() {
       @Override
       public StructuredRecord call(StructuredRecord v1) throws Exception {
