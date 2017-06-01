@@ -37,7 +37,7 @@ public class ResultSetToDDLRecord extends AbstractFunction1<ResultSet, Structure
 
   private StructuredRecord transform(ResultSet resultSet) throws SQLException {
     Schema tableSchema = Schema.recordOf("schema", DBUtils.getSchemaFields(resultSet));
-    System.out.println("### The tableschema for DDL is " + schemaName);
+    System.out.println("### The tableschema for DDL is " + schemaName + " " + tableName);
 
     StructuredRecord.Builder builder = StructuredRecord.builder(DDL_SCHEMA);
     builder.set("table", schemaName + "_" + tableName);

@@ -28,7 +28,7 @@ import java.util.Set;
 /**
  * A {@link InputDStream} which reads cdc data from SQL Server and emits {@link StructuredRecord}
  */
-public class CDCInputDStream extends InputDStream<StructuredRecord> {
+public class DMLInputDStream extends InputDStream<StructuredRecord> {
   private static final Logger LOG = LoggerFactory.getLogger(SQLServerStreamingSource.class);
   private static final Schema DDL_SCHEMA = Schema.recordOf("DDLRecord",
                                                            Schema.Field.of("table", Schema.of(Schema.Type.STRING)),
@@ -43,7 +43,7 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
   private SQLServerConnection dbConnection;
   private long currentTrackingVersion;
 
-  CDCInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
+  DMLInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
                   String password, List<TableInformation> tableInformations, long currentTrackingVersion) {
     super(ssc, tag);
     this.tag = tag;
@@ -55,7 +55,7 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     this.currentTrackingVersion = currentTrackingVersion;
   }
 
-  CDCInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
+  DMLInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
                   String password, List<TableInformation> tableInformations) {
     super(ssc, tag);
     this.tag = tag;
@@ -70,10 +70,6 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
     List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
-    for (TableInformation tableInformation : tableInformations) {
-      changeRDDs.add(getColumnns(tableInformation));
-    }
-
     long prev = currentTrackingVersion;
     try {
       currentTrackingVersion = getCurrentTrackingVersion(dbConnection.apply());
@@ -145,18 +141,6 @@ public class CDCInputDStream extends InputDStream<StructuredRecord> {
     }
 
     return Joiner.on(", ").join(selectColumns);
-  }
-
-  private JdbcRDD<StructuredRecord> getColumnns(TableInformation tableInformation) {
-
-    final SparkContext sparkC = sparkContext;
-
-    String stmt = String.format("SELECT TOP 1 * FROM [%s].[%s] where ?=?", tableInformation.getSchemaName(),
-                                tableInformation.getName());
-
-    return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1,
-                         new ResultSetToDDLRecord(tableInformation.getSchemaName(), tableInformation.getName()),
-                         ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }
 
   private long getCurrentTrackingVersion(Connection connection) throws SQLException {

@@ -21,6 +21,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -76,14 +77,23 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
 
     List<TableInformation> ctEnabledTables = getCTEnabledTables(connection);
 
-    JavaDStream<StructuredRecord> structuredRecordJavaDStream =
-      JavaDStream.fromDStream(new CDCInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
+    JavaDStream<StructuredRecord> ddlJavaDStream =
+      JavaDStream.fromDStream(new DDLInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
                                                   getConnectionString(), conf.username, conf
                                                     .password, ctEnabledTables), tag);
 
+    JavaDStream<StructuredRecord> dmlJavaDStream =
+      JavaDStream.fromDStream(new DMLInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
+                                                  getConnectionString(), conf.username, conf
+                                                    .password, ctEnabledTables), tag);
+
+    List<JavaDStream<StructuredRecord>> records = new ArrayList<>();
+    records.add(dmlJavaDStream);
+
+    JavaDStream<StructuredRecord> union = streamingContext.getSparkStreamingContext().union(ddlJavaDStream, records);
 
 
-    structuredRecordJavaDStream.map(new Function<StructuredRecord, StructuredRecord>() {
+    union.map(new Function<StructuredRecord, StructuredRecord>() {
       @Override
       public StructuredRecord call(StructuredRecord v1) throws Exception {
         System.out.println("### Printing lsn " + v1.get("__$start_lsn"));
@@ -92,7 +102,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     });
 
 
-    return structuredRecordJavaDStream;
+    return union;
   }
 
   private String getConnectionString() {
