@@ -16,6 +16,8 @@
 
 package co.cask.cdc.plugins.sink;
 
+import co.cask.cdap.api.annotation.Description;
+import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.common.Bytes;
@@ -25,7 +27,7 @@ import co.cask.cdap.etl.api.batch.SparkExecutionPluginContext;
 import co.cask.cdap.etl.api.batch.SparkPluginContext;
 import co.cask.cdap.etl.api.batch.SparkSink;
 import co.cask.cdap.format.StructuredRecordStringConverter;
-import co.cask.cdc.plugins.CDCHBaseConfig;
+import co.cask.hydrator.common.ReferencePluginConfig;
 import co.cask.hydrator.common.batch.JobUtils;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -54,19 +56,20 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
 
 /**
  * HBase sink for CDC
  */
 @Plugin(type = SparkSink.PLUGIN_TYPE)
-@Name("CDCHBaseSink")
-public class CDCHBaseSink extends SparkSink<StructuredRecord> {
-  private static final Logger LOG = LoggerFactory.getLogger(CDCHBaseSink.class);
+@Name("CDCHBase")
+public class CDCHBase extends SparkSink<StructuredRecord> {
+  private static final Logger LOG = LoggerFactory.getLogger(CDCHBase.class);
   private static Gson GSON = new Gson();
   private final CDCHBaseConfig config;
   private final String CDC_COLUMN_FAMILY = "cdc";
 
-  public CDCHBaseSink(CDCHBaseConfig config) {
+  public CDCHBase(CDCHBaseConfig config) {
     this.config = config;
   }
 
@@ -130,10 +133,11 @@ public class CDCHBaseSink extends SparkSink<StructuredRecord> {
             StructuredRecord input = structuredRecordIterator.next();
             LOG.info("Received StructuredRecord in HBase {}", GSON.toJson(input));
             LOG.info("StructuredRecord to StringConverter HBase {}", StructuredRecordStringConverter.toJsonString(input));
+            String tableName = getTableName((String) input.get("table"));
             if (input.getSchema().getRecordName().equals("DDLRecord")) {
-              createHBaseTable(hBaseAdmin, (String) input.get("table"));
+              createHBaseTable(hBaseAdmin, tableName);
             } else {
-              Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf((String) input.get("table")));
+              Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf(tableName));
               updateHBaseTable(table, input);
             }
 
@@ -147,6 +151,10 @@ public class CDCHBaseSink extends SparkSink<StructuredRecord> {
     });
   }
 
+
+  private String getTableName(String namespacedTableName) {
+    return namespacedTableName.split("\\.")[1];
+  }
 
   private void createHBaseTable(Admin admin, String tableName) throws IOException {
     LOG.info("Creating HBase table {}.", tableName);
@@ -222,7 +230,7 @@ public class CDCHBaseSink extends SparkSink<StructuredRecord> {
     String operationType = input.get("op_type");
     List<String> primaryKeys = input.get("primary_keys");
     StructuredRecord change = input.get("change");
-    List<Schema.Field> fields = Schema.parseJson((String)input.get("schema")).getFields();
+    List<Schema.Field> fields = change.getSchema().getFields();
     LOG.info("Operation type is {}", operationType);
     for(String pKey: primaryKeys) {
       LOG.info("prim key : {}", pKey);
@@ -247,6 +255,30 @@ public class CDCHBaseSink extends SparkSink<StructuredRecord> {
         break;
       default:
         LOG.warn(String.format("Operation of type '%s' will be ignored.", operationType));
+    }
+  }
+
+  public static class CDCHBaseConfig extends ReferencePluginConfig {
+
+    @Name("zookeeperQuorum")
+    @Nullable
+    @Description("Zookeeper Quorum. By default it is set to 'localhost'")
+    public String zkQuorum;
+
+    @Name("zookeeperClientPort")
+    @Nullable
+    @Macro
+    @Description("Zookeeper Client Port. By default it is set to 2181")
+    public String zkClientPort;
+
+    @Name("zookeeperParent")
+    @Nullable
+    @Macro
+    @Description("Parent Node of HBase in Zookeeper. Default to '/hbase'")
+    public String zkNodeParent;
+
+    public CDCHBaseConfig(String referenceName) {
+      super(referenceName);
     }
   }
 }
