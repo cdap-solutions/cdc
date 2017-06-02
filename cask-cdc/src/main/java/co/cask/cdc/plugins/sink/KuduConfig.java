@@ -14,7 +14,7 @@
  * the License.
  */
 
-package co.cask.cdc.plugins.compute;
+package co.cask.cdc.plugins.sink;
 
 import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Macro;

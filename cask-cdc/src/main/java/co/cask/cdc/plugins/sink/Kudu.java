@@ -14,14 +14,15 @@
  * the License.
  */
 
-package co.cask.cdc.plugins.compute;
+package co.cask.cdc.plugins.sink;
 
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
-import co.cask.cdap.etl.api.batch.SparkCompute;
 import co.cask.cdap.etl.api.batch.SparkExecutionPluginContext;
+import co.cask.cdap.etl.api.batch.SparkPluginContext;
+import co.cask.cdap.etl.api.batch.SparkSink;
 import co.cask.cdap.format.StructuredRecordStringConverter;
 import com.google.common.collect.Sets;
 import com.google.gson.Gson;
@@ -39,7 +40,7 @@ import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.SessionConfiguration;
 import org.apache.kudu.client.Update;
 import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.function.FlatMapFunction;
+import org.apache.spark.api.java.function.VoidFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,9 +56,9 @@ import java.util.Set;
 /**
  * Spark compute plugin
  */
-@Plugin(type = SparkCompute.PLUGIN_TYPE)
+@Plugin(type = SparkSink.PLUGIN_TYPE)
 @Name("Kudu")
-public class Kudu extends SparkCompute<StructuredRecord, StructuredRecord> {
+public class Kudu extends SparkSink<StructuredRecord> {
   private static final Logger LOG = LoggerFactory.getLogger(Kudu.class);
   private static Gson GSON = new Gson();
   private final KuduConfig kuduConfig;
@@ -68,77 +69,20 @@ public class Kudu extends SparkCompute<StructuredRecord, StructuredRecord> {
     this.kuduConfig = config;
   }
 
-  @Override
-  public JavaRDD<StructuredRecord> transform(SparkExecutionPluginContext sparkExecutionPluginContext,
-                                             JavaRDD<StructuredRecord> javaRDD) throws Exception {
-    return javaRDD.mapPartitions(new FlatMapFunction<Iterator<StructuredRecord>, StructuredRecord>() {
-
-      @Override
-      public Iterable<StructuredRecord> call(Iterator<StructuredRecord> structuredRecordIterator) throws Exception {
-        try (KuduClient client = new KuduClient.KuduClientBuilder(kuduConfig.getMasterAddress())
-          .defaultOperationTimeoutMs(kuduConfig.getOperationTimeout())
-          .defaultAdminOperationTimeoutMs(kuduConfig.getAdministrationTimeout())
-          .disableStatistics()
-          .bossCount(kuduConfig.getThreads())
-          .build()) {
-
-          KuduSession session = client.newSession();
-          // Buffer 100 operations
-          session.setMutationBufferSpace(100);
-          session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
-
-          while (structuredRecordIterator.hasNext()) {
-            StructuredRecord input = structuredRecordIterator.next();
-            LOG.info("Received StructuredRecord in Kudu {}", GSON.toJson(input));
-            LOG.info("StructuredRecord to StringConverter Kudu {}", StructuredRecordStringConverter.toJsonString(input));
-            if (input.getSchema().getRecordName().equals("DDLRecord")) {
-              if (updateKuduTableSchema(client, input)) {
-                // Schema for the table is updated. Flush the session now
-                session.flush();
-              }
-            } else {
-              updateKuduTableRecord(client, session, input);
-            }
-          }
-        }
-
-        return new Iterable<StructuredRecord>() {
-          @Override
-          public Iterator<StructuredRecord> iterator() {
-            return new Iterator<StructuredRecord>() {
-              @Override
-              public boolean hasNext() {
-                return false;
-              }
-
-              @Override
-              public StructuredRecord next() {
-                return null;
-              }
-
-              @Override
-              public void remove() {
-              }
-            };
-          }
-        };
-      }
-    }, true);
-  }
-
   private boolean updateKuduTableSchema(KuduClient client, StructuredRecord input) throws Exception {
     LOG.info("Updating Kudu Table Schema for {}", GSON.toJson(input));
     String namespacedTableName = input.get("table");
+    String tableName = namespacedTableName.split("\\.")[1];
     Schema newSchema = Schema.parseJson((String) input.get("schema"));
-    if (!existingTables.contains(namespacedTableName) && !client.tableExists(namespacedTableName)) {
+    if (!existingTables.contains(tableName) && !client.tableExists(tableName)) {
       // Table does not exists in the Kudu yet.
       // Creation of table will be attempted when we first see the DML Record.
       // Since at that point we know the primary keys to used.
-      schemaMapping.put(namespacedTableName, newSchema);
+      schemaMapping.put(tableName, newSchema);
       return false;
     }
 
-    KuduTable table = client.openTable(namespacedTableName);
+    KuduTable table = client.openTable(tableName);
     org.apache.kudu.Schema kuduTableSchema = table.getSchema();
     Set<String> oldColumns = new HashSet<>();
     for (ColumnSchema schema : kuduTableSchema.getColumns()) {
@@ -195,20 +139,24 @@ public class Kudu extends SparkCompute<StructuredRecord, StructuredRecord> {
     return true;
   }
 
+  private String getTableName(String namespacedTableName) {
+    return namespacedTableName.split("\\.")[1];
+  }
+
   private void updateKuduTableRecord(KuduClient client, KuduSession session, StructuredRecord input) throws Exception {
-    String namespacedTableName = input.get("table");
+    String tableName = getTableName((String) input.get("table"));
     String operationType = input.get("op_type");
     List<String> primaryKeys = input.get("primary_keys");
-    if (!existingTables.contains(namespacedTableName) && !client.tableExists(namespacedTableName)) {
+    if (!existingTables.contains(tableName) && !client.tableExists(tableName)) {
       // TODO it is assumed that create table and operation on the table happens in the same batch
       // Most likely it will be case but they can come in separate batch
-      createKuduTable(client, namespacedTableName, schemaMapping.get(namespacedTableName), primaryKeys);
-      existingTables.add(namespacedTableName);
+      createKuduTable(client, tableName, schemaMapping.get(tableName), primaryKeys);
+      existingTables.add(tableName);
     }
 
-    KuduTable table = client.openTable(namespacedTableName);
+    KuduTable table = client.openTable(tableName);
     StructuredRecord change = input.get("change");
-    List<Schema.Field> fields = Schema.parseJson((String)input.get("schema")).getFields();
+    List<Schema.Field> fields = change.getSchema().getFields();
     switch (operationType) {
       case "I":
         Insert insert = table.newInsert();
@@ -409,5 +357,46 @@ public class Kudu extends SparkCompute<StructuredRecord, StructuredRecord> {
                       name, type.toString())
       );
     }
+  }
+
+  @Override
+  public void run(SparkExecutionPluginContext sparkExecutionPluginContext, JavaRDD<StructuredRecord> javaRDD) throws Exception {
+
+    javaRDD.foreachPartition(new VoidFunction<Iterator<StructuredRecord>>() {
+      @Override
+      public void call(Iterator<StructuredRecord> structuredRecordIterator) throws Exception {
+        try (KuduClient client = new KuduClient.KuduClientBuilder(kuduConfig.getMasterAddress())
+          .defaultOperationTimeoutMs(kuduConfig.getOperationTimeout())
+          .defaultAdminOperationTimeoutMs(kuduConfig.getAdministrationTimeout())
+          .disableStatistics()
+          .bossCount(kuduConfig.getThreads())
+          .build()) {
+
+          KuduSession session = client.newSession();
+          // Buffer 100 operations
+          session.setMutationBufferSpace(100);
+          session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+
+          while (structuredRecordIterator.hasNext()) {
+            StructuredRecord input = structuredRecordIterator.next();
+            LOG.info("Received StructuredRecord in Kudu {}", GSON.toJson(input));
+            LOG.info("StructuredRecord to StringConverter Kudu {}", StructuredRecordStringConverter.toJsonString(input));
+            if (input.getSchema().getRecordName().equals("DDLRecord")) {
+              if (updateKuduTableSchema(client, input)) {
+                // Schema for the table is updated. Flush the session now
+                session.flush();
+              }
+            } else {
+              updateKuduTableRecord(client, session, input);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  @Override
+  public void prepareRun(SparkPluginContext context) throws Exception {
+    // no-op
   }
 }

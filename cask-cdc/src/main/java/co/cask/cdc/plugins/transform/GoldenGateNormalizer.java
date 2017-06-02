@@ -16,18 +16,15 @@
 
 package co.cask.cdc.plugins.transform;
 
-import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.common.Bytes;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
-import co.cask.cdap.api.plugin.PluginConfig;
 import co.cask.cdap.etl.api.Emitter;
 import co.cask.cdap.etl.api.Transform;
 import co.cask.cdap.format.StructuredRecordStringConverter;
 import co.cask.cdc.plugins.common.AvroConverter;
-import co.cask.cdc.plugins.common.SchemaUtils;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.apache.avro.generic.GenericDatumReader;
@@ -44,7 +41,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-
 /**
  * Normalizer plugin to process the events from the Golden Gate Kafka topic.
  */
@@ -57,18 +53,19 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
                                                            Schema.Field.of("table", Schema.of(Schema.Type.STRING)),
                                                            Schema.Field.of("schema", Schema.of(Schema.Type.STRING)));
 
-  private final GoldenGateNormalizerConfig config;
+  private static final String INPUT_FIELD = "message";
+  // private final GoldenGateNormalizerConfig config;
 
+  /*
   public GoldenGateNormalizer(GoldenGateNormalizerConfig config) {
     this.config = config;
-  }
+  }*/
 
   @Override
   public void transform(StructuredRecord input, Emitter<StructuredRecord> emitter) throws Exception {
-    byte[] message = input.get(config.getInputField());
+    byte[] message = input.get(INPUT_FIELD);
     if (message == null) {
-      throw new IllegalStateException(String.format("Input record does not contain the field '%s'.",
-                                                    config.getInputField()));
+      throw new IllegalStateException(String.format("Input record does not contain the field '%s'.", INPUT_FIELD));
     }
 
     if (input.getSchema().getRecordName().equals("GenericWrapperSchema")) {
@@ -81,9 +78,9 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
       JsonObject schemaObj = GSON.fromJson(messageBody, JsonObject.class);
       String namespaceName = schemaObj.get("namespace").getAsString();
       String tableName = schemaObj.get("name").getAsString();
-      String namespacedTableName = namespaceName + "_" + tableName;
+      tableName = namespaceName + "." + tableName;
       StructuredRecord.Builder builder = StructuredRecord.builder(DDL_SCHEMA);
-      builder.set("table", namespacedTableName);
+      builder.set("table", tableName);
       builder.set("schema", getNormalizedDDLSchema(messageBody));
       emitter.emit(builder.build());
       return;
@@ -91,10 +88,9 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
 
     // Current message is the Wrapped Avro binary message
     // Get the state map
-
     StructuredRecord stateRecord = input.get("staterecord");
     Map<Long, String> schemaCacheMap = stateRecord.get("data");
-    org.apache.avro.Schema avroGenericWrapperSchema = SchemaUtils.getGenericWrapperMessageSchema();
+    org.apache.avro.Schema avroGenericWrapperSchema = getGenericWrapperMessageSchema();
 
     GenericRecord genericRecord = getRecord(message, avroGenericWrapperSchema);
     String tableName = genericRecord.get("table_name").toString();
@@ -112,26 +108,28 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
                                                                      AvroConverter.fromAvroSchema(avroSchema));
 
     LOG.info("Emitting Structured Record {}", StructuredRecordStringConverter.toJsonString(structuredRecord));
-    emitter.emit(getNormalizedDMLRecord(structuredRecord, getNormalizedDDLSchema(schemaCacheMap.get(schameHashId))));
-
+    emitter.emit(getNormalizedDMLRecord(structuredRecord));
   }
 
+  /*
   public static class GoldenGateNormalizerConfig extends PluginConfig {
-    @Name("inputField")
-    @Description("Input field containing the payload of the message. Defaults to 'message'.")
-    private String inputField;
+    @Name("includeNamespaceInTableName")
+    @Description("Option to specify whether to include namespace name in the table. For example, if set to 'true' " +
+      "and namespace for the source table 'EMPLOYEE' is 'HR', then the output table name would be 'EMPLOYEE_HR'.")
+    private Boolean includeNamespaceInTableName;
 
-    public GoldenGateNormalizerConfig(String inputField) {
-      this.inputField = inputField;
+    public GoldenGateNormalizerConfig(boolean includeNamespaceInTableName) {
+      this.includeNamespaceInTableName = includeNamespaceInTableName;
     }
 
-    public String getInputField() {
-      if (inputField == null || inputField.trim().length() == 0) {
-        return "message";
+    public boolean includeNamespaceName() {
+      if (includeNamespaceInTableName == null) {
+        return false;
       }
-      return inputField;
+      return includeNamespaceInTableName;
     }
   }
+  */
 
   private GenericRecord getRecord(byte[] message, org.apache.avro.Schema schema) throws IOException {
     LOG.info("Schema while getting record {}", schema);
@@ -155,9 +153,9 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
     return Schema.recordOf("columns", columnFields).toString();
   }
 
-  public static StructuredRecord getNormalizedDMLRecord(StructuredRecord record, String schema) {
-    String namespacedTableName = record.get("table");
-    namespacedTableName = namespacedTableName.replace('.', '_');
+  private StructuredRecord getNormalizedDMLRecord(StructuredRecord record) {
+    // This table name contains "." in it already
+    String tableName = record.get("table");
     List<String> primaryKeys = record.get("primary_keys");
     String opType = record.get("op_type");
     Map<Schema.Field, Object> suppliedFieldValues = new HashMap<>();
@@ -172,11 +170,15 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
         break;
       case "U":
         StructuredRecord updateRecord = record.get("after");
+        StructuredRecord beforeUpdateRecord = record.get("before");
         for (co.cask.cdap.api.data.schema.Schema.Field field : updateRecord.getSchema().getFields()) {
           if (!field.getName().endsWith("_isMissing")) {
             String fieldName = field.getName();
             if (updateRecord.get(fieldName + "_isMissing") != true) {
               suppliedFieldValues.put(field, updateRecord.get(field.getName()));
+            } else {
+              // Field is not updated, use the field value from the before record
+              suppliedFieldValues.put(field, beforeUpdateRecord.get(field.getName()));
             }
           }
         }
@@ -200,17 +202,34 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
     }
 
     Schema dmlSchema = Schema.recordOf("DMLRecord", Schema.Field.of("table", Schema.of(Schema.Type.STRING)),
-                                       Schema.Field.of("schema", Schema.of(Schema.Type.STRING)),
                                        Schema.Field.of("op_type", Schema.of(Schema.Type.STRING)),
                                        Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING))),
                                        Schema.Field.of("change", changeSchema));
 
     StructuredRecord.Builder builder = StructuredRecord.builder(dmlSchema);
-    builder.set("schema", schema);
-    builder.set("table", namespacedTableName);
+    builder.set("table", tableName);
     builder.set("op_type", opType);
     builder.set("primary_keys", primaryKeys);
     builder.set("change", changeBuilder.build());
     return builder.build();
+  }
+
+  private org.apache.avro.Schema getGenericWrapperMessageSchema() {
+    String avroGenericWrapperSchema = "{\n" +
+      "          \"type\" : \"record\",\n" +
+      "          \"name\" : \"generic_wrapper\",\n" +
+      "          \"namespace\" : \"oracle.goldengate\",\n" +
+      "          \"fields\" : [ {\n" +
+      "            \"name\" : \"table_name\",\n" +
+      "            \"type\" : \"string\"\n" +
+      "          }, {\n" +
+      "            \"name\" : \"schema_fingerprint\",\n" +
+      "            \"type\" : \"long\"\n" +
+      "          }, {\n" +
+      "            \"name\" : \"payload\",\n" +
+      "            \"type\" : \"bytes\"\n" +
+      "          } ]\n" +
+      "        }";
+    return new org.apache.avro.Schema.Parser().parse(avroGenericWrapperSchema);
   }
 }
