@@ -16,8 +16,6 @@
 
 package co.cask.cdc.plugins.sink;
 
-import co.cask.cdap.api.annotation.Description;
-import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.common.Bytes;
@@ -27,7 +25,7 @@ import co.cask.cdap.etl.api.batch.SparkExecutionPluginContext;
 import co.cask.cdap.etl.api.batch.SparkPluginContext;
 import co.cask.cdap.etl.api.batch.SparkSink;
 import co.cask.cdap.format.StructuredRecordStringConverter;
-import co.cask.hydrator.common.ReferencePluginConfig;
+import co.cask.cdc.plugins.CDCHBaseConfig;
 import co.cask.hydrator.common.batch.JobUtils;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -44,7 +42,11 @@ import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.spark.Partition;
+import org.apache.spark.TaskContext;
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.function.FlatMapFunction;
+import org.apache.spark.executor.Executor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,7 +57,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import javax.annotation.Nullable;
 
 /**
  * HBase sink for CDC
@@ -86,58 +87,88 @@ public class CDCHBaseSink extends SparkSink<StructuredRecord> {
     }
 
     LOG.info("HBase returning from here");
-    Job job;
-    ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
-    // Switch the context classloader to plugin class' classloader (PluginClassLoader) so that
-    // when Job/Configuration is created, it uses PluginClassLoader to load resources (hbase-default.xml)
-    // which is present in the plugin jar and is not visible in the CombineClassLoader (which is what oldClassLoader
-    // points to).
-    Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
-    try {
-      job = JobUtils.createInstance();
-    } finally {
-      // Switch back to the original
-      Thread.currentThread().setContextClassLoader(oldClassLoader);
-    }
 
-    Configuration conf = job.getConfiguration();
+    // maps data sets to each block of computing resources
+    javaRDD.mapPartitions(new FlatMapFunction<Iterator<StructuredRecord>, StructuredRecord>() {
 
-    // initialize the zookeeper quorum settings
-    String zkQuorum = !Strings.isNullOrEmpty(config.zkQuorum) ? config.zkQuorum : "localhost";
-    String zkClientPort = !Strings.isNullOrEmpty(config.zkClientPort) ? config.zkClientPort : "2181";
-    String zkNodeParent = !Strings.isNullOrEmpty(config.zkNodeParent) ? config.zkNodeParent : "/hbase";
-    conf.set("hbase.zookeeper.quorum", zkQuorum);
-    conf.set("hbase.zookeeper.property.clientPort", zkClientPort);
-    conf.set("zookeeper.znode.parent", zkNodeParent);
-    LOG.info("Zookeeper quorum to HBASEXXX {}", String.format("%s:%s:%s", zkQuorum, zkClientPort, zkNodeParent));
+      @Override
+      public Iterable<StructuredRecord> call(Iterator<StructuredRecord> structuredRecordIterator) throws Exception {
+        LOG.info("HBASEXXX");
 
-    // now we put the node configurations in conf
-    Iterator<Map.Entry<String,String>> configIterator = configs.entrySet().iterator();
-    while (configIterator.hasNext()) {
-      Map.Entry<String,String> nextConfig = configIterator.next();
-      conf.set(nextConfig.getKey(), nextConfig.getValue());
-    }
-
-    Iterator<StructuredRecord> structuredRecordIterator =  javaRDD.toLocalIterator();
-    try (Connection connection = ConnectionFactory.createConnection(conf);
-         Admin hBaseAdmin = connection.getAdmin()) {
-      while (structuredRecordIterator.hasNext()) {
-        StructuredRecord input = structuredRecordIterator.next();
-        LOG.info("Received StructuredRecord in HBase {}", GSON.toJson(input));
-        LOG.info("StructuredRecord to StringConverter HBase {}", StructuredRecordStringConverter.toJsonString(input));
-        if (input.getSchema().getRecordName().equals("DDLRecord")) {
-          createHBaseTable(hBaseAdmin, (String) input.get("table"));
-        } else {
-          Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf((String) input.get("table")));
-          updateHBaseTable(table, input);
+        Job job;
+        ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
+        // Switch the context classloader to plugin class' classloader (PluginClassLoader) so that
+        // when Job/Configuration is created, it uses PluginClassLoader to load resources (hbase-default.xml)
+        // which is present in the plugin jar and is not visible in the CombineClassLoader (which is what oldClassLoader
+        // points to).
+        Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
+        try {
+          job = JobUtils.createInstance();
+        } finally {
+          // Switch back to the original
+          Thread.currentThread().setContextClassLoader(oldClassLoader);
         }
 
-      }
-    } catch (Throwable t) {
-      LOG.error("Exception  ", t);
-    }
+        Configuration conf = job.getConfiguration();
 
-    LOG.info("HBASEXXX After exception {}");
+        // initialize the zookeeper quorum settings
+        String zkQuorum = !Strings.isNullOrEmpty(config.zkQuorum) ? config.zkQuorum : "localhost";
+        String zkClientPort = !Strings.isNullOrEmpty(config.zkClientPort) ? config.zkClientPort : "2181";
+        String zkNodeParent = !Strings.isNullOrEmpty(config.zkNodeParent) ? config.zkNodeParent : "/hbase";
+        conf.set("hbase.zookeeper.quorum", zkQuorum);
+        conf.set("hbase.zookeeper.property.clientPort", zkClientPort);
+        conf.set("zookeeper.znode.parent", zkNodeParent);
+        LOG.info("Zookeeper quorum to HBASEXXX {}", String.format("%s:%s:%s", zkQuorum, zkClientPort, zkNodeParent));
+
+        // now we put the node configurations in conf
+        Iterator<Map.Entry<String,String>> configIterator = configs.entrySet().iterator();
+        while (configIterator.hasNext()) {
+          Map.Entry<String,String> nextConfig = configIterator.next();
+          conf.set(nextConfig.getKey(), nextConfig.getValue());
+        }
+
+        try (Connection connection = ConnectionFactory.createConnection(conf);
+             Admin hBaseAdmin = connection.getAdmin()) {
+          while (structuredRecordIterator.hasNext()) {
+            StructuredRecord input = structuredRecordIterator.next();
+            LOG.info("Received StructuredRecord in HBase {}", GSON.toJson(input));
+            LOG.info("StructuredRecord to StringConverter HBase {}", StructuredRecordStringConverter.toJsonString(input));
+            if (input.getSchema().getRecordName().equals("DDLRecord")) {
+              createHBaseTable(hBaseAdmin, (String) input.get("table"));
+            } else {
+              Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf((String) input.get("table")));
+              updateHBaseTable(table, input);
+            }
+
+          }
+        } catch (Throwable t) {
+          LOG.error("Exception  ", t);
+        }
+
+        LOG.info("HBASEXXX After exception {}");
+
+        return new Iterable<StructuredRecord>() {
+          @Override
+          public Iterator<StructuredRecord> iterator() {
+            return new Iterator<StructuredRecord>() {
+              @Override
+              public boolean hasNext() {
+                return false;
+              }
+
+              @Override
+              public StructuredRecord next() {
+                return null;
+              }
+
+              @Override
+              public void remove() {
+              }
+            };
+          }
+        };
+      }
+    }, true).collect();
   }
 
 
@@ -240,30 +271,6 @@ public class CDCHBaseSink extends SparkSink<StructuredRecord> {
         break;
       default:
         LOG.warn(String.format("Operation of type '%s' will be ignored.", operationType));
-    }
-  }
-
-  public static class CDCHBaseConfig extends ReferencePluginConfig {
-
-    @Name("zookeeperQuorum")
-    @Nullable
-    @Description("Zookeeper Quorum. By default it is set to 'localhost'")
-    public String zkQuorum;
-
-    @Name("zookeeperClientPort")
-    @Nullable
-    @Macro
-    @Description("Zookeeper Client Port. By default it is set to 2181")
-    public String zkClientPort;
-
-    @Name("zookeeperParent")
-    @Nullable
-    @Macro
-    @Description("Parent Node of HBase in Zookeeper. Default to '/hbase'")
-    public String zkNodeParent;
-
-    public CDCHBaseConfig(String referenceName) {
-      super(referenceName);
     }
   }
 }

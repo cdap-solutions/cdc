@@ -16,8 +16,6 @@
 
 package co.cask.cdc.plugins.compute;
 
-import co.cask.cdap.api.annotation.Description;
-import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.common.Bytes;
@@ -26,7 +24,7 @@ import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.etl.api.batch.SparkCompute;
 import co.cask.cdap.etl.api.batch.SparkExecutionPluginContext;
 import co.cask.cdap.format.StructuredRecordStringConverter;
-import co.cask.hydrator.common.ReferencePluginConfig;
+import co.cask.cdc.plugins.CDCHBaseConfig;
 import co.cask.hydrator.common.batch.JobUtils;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -55,7 +53,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import javax.annotation.Nullable;
 
 /**
  * HBase sink for CDC
@@ -270,30 +267,6 @@ public class CDCHBase extends SparkCompute<StructuredRecord, StructuredRecord> {
         break;
       default:
         LOG.warn(String.format("Operation of type '%s' will be ignored.", operationType));
-    }
-  }
-
-  public static class CDCHBaseConfig extends ReferencePluginConfig {
-
-    @Name("zookeeperQuorum")
-    @Nullable
-    @Description("Zookeeper Quorum. By default it is set to 'localhost'")
-    public String zkQuorum;
-
-    @Name("zookeeperClientPort")
-    @Nullable
-    @Macro
-    @Description("Zookeeper Client Port. By default it is set to 2181")
-    public String zkClientPort;
-
-    @Name("zookeeperParent")
-    @Nullable
-    @Macro
-    @Description("Parent Node of HBase in Zookeeper. Default to '/hbase'")
-    public String zkNodeParent;
-
-    public CDCHBaseConfig(String referenceName) {
-      super(referenceName);
     }
   }
 }
