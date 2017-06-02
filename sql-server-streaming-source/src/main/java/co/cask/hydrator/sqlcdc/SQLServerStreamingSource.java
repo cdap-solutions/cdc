@@ -47,10 +47,10 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     try {
       Class.forName(SQLServerDriver.class.getName());
       if (conf.username != null && conf.password != null) {
-        LOG.error("Creating connection with url {}, username {}, password *****", getConnectionString(), conf.username);
+        LOG.info("Creating connection with url {}, username {}, password *****", getConnectionString(), conf.username);
         connection = DriverManager.getConnection(getConnectionString(), conf.username, conf.password);
       } else {
-        LOG.error("Creating connection with url {}", getConnectionString());
+        LOG.info("Creating connection with url {}", getConnectionString());
         connection = DriverManager.getConnection(getConnectionString(), null, null);
       }
     } catch (Exception e) {

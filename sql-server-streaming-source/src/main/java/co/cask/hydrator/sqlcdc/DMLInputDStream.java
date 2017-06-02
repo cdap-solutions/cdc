@@ -103,8 +103,8 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
     String stmt = String.format("SELECT [CT].[SYS_CHANGE_VERSION], [CT].[SYS_CHANGE_CREATION_VERSION], " +
                                   "[CT].[SYS_CHANGE_OPERATION], %s, %s FROM [%s] as [CI] RIGHT OUTER JOIN " +
                                   "CHANGETABLE (CHANGES [%s], %s) as [CT] on %s where [CT]" +
-                                  ".[SYS_CHANGE_CREATION_VERSION] > ? " +
-                                  "and [CT].[SYS_CHANGE_CREATION_VERSION] <= ? ORDER BY [CT]" +
+                                  ".[SYS_CHANGE_VERSION] > ? " +
+                                  "and [CT].[SYS_CHANGE_VERSION] <= ? ORDER BY [CT]" +
                                   ".[SYS_CHANGE_VERSION]",
                                 joinSelect("CT", tableInformation.getPrimaryKeys()),
                                 joinSelect("CI", tableInformation.getValueColumnNames()),

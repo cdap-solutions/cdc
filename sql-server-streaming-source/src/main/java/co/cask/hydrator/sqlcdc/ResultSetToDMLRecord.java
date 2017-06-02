@@ -53,8 +53,8 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
     // 0 th field is tableName
     recordBuilder.set("table", Joiner.on(".").join(tableInformation.getSchemaName(), tableInformation.getName()));
-    recordBuilder.set("primary_keys",
-                      tableInformation.getPrimaryKeys().toArray(new String[tableInformation.getPrimaryKeys().size()]));
+
+    recordBuilder.set("primary_keys", Lists.newArrayList(tableInformation.getPrimaryKeys()));
     StructuredRecord.Builder changeRecordBuilder = StructuredRecord.builder(changeSchema);
 //    for (int i = 1; i <= metadata.getColumnCount(); i++) {
 //      Schema.Field field = changeSchema.getFields().get(i - 1);
