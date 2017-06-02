@@ -3,26 +3,11 @@ CDC HBase Sink
 
 CDAP Plugin for Change Data Capture (CDC) in HBase using the Spark Framework. Plugin can be configured only for real-time pipelines.
 
-Plugin Configuration
----------------------
-
-The following configurations collectively specify the address of the target HBase server.
-
-| Config | Required | Default | Description |
-| :------------ | :------: | :----- | :---------- |
-| **Reference Name** | **Yes** | N/A | Name of the plugin instance.| 
-| **zookeeperClientPort** | **No** | `2181` | Specifies the port which the HBase server runs on. |
-| **zookeeperParent** | **No** | `/hbase` | Specifies the HBase parent node. |
-| **zookeeperQuorum** | **No** | `localhost` | The web/IP address of the HBase server. |
-
-Note that your HBase server does not necessarily run on the address specified by the default configurations. Check before you deploy and run.
-
 Usage Notes
 -----------
 
-This plugin supports table creation and table modification on the target HBase server. We recommend placing a normalizer transformation plugin before this plugin because it converts inputs into standard Data Definition Language (DDL) and Data Manipulation Language (DML) records that can be parsed by this plugin.
+This plugin supports table creation and table modification on an HBase server. We recommend placing a normalizer transformation plugin before this plugin. It converts inputs into standard Data Definition Language (DDL) and Data Manipulation Language (DML) records that can be parsed by this plugin.
 
- 
 Table Creation
 --------------
 
@@ -104,7 +89,20 @@ The content of the changes is listed in the `change` field. The `primary_keys` f
   }
 }
 ```
+Plugin Configuration
+---------------------
 
+The following configurations collectively specify the address of the target HBase server.
+
+| Config | Required | Default | Description |
+| :------------ | :------: | :----- | :---------- |
+| **Reference Name** | **Yes** | N/A | Name of the plugin instance.| 
+| **zookeeperClientPort** | **No** | `2181` | Specifies the port which the HBase server runs on. |
+| **zookeeperParent** | **No** | `/hbase` | Specifies the HBase parent node. |
+| **zookeeperQuorum** | **No** | `localhost` | The web/IP address of the HBase server. |
+
+Note that your HBase server does not necessarily run on the address specified by the default configurations. Check before you deploy and run.
+ 
 Build
 -----
 To build this plugin:
@@ -122,9 +120,9 @@ You can deploy your plugins using the CDAP CLI:
 
     > load artifact <target/plugin.jar> config-file <target/plugin.json>
 
-For example, if your artifact is named 'kudu-sink-1.0.0':
+For example, if your artifact is named 'CDCHBase-sink-1.0.0':
 
-    > load artifact target/kudu-sink-1.0.0.jar config-file target/kudu-sink-1.0.0.json
+    > load artifact target/CDCHBase-sink-1.0.0.jar config-file target/CDCHBase-sink-1.0.0.json
     
 ## Mailing Lists
 
