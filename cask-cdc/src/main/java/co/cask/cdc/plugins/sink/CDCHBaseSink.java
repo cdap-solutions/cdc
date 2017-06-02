@@ -43,7 +43,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.function.FlatMapFunction;
+import org.apache.spark.api.java.function.VoidFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,10 +86,10 @@ public class CDCHBaseSink extends SparkSink<StructuredRecord> {
     LOG.info("HBase returning from here");
 
     // maps data sets to each block of computing resources
-    javaRDD.mapPartitions(new FlatMapFunction<Iterator<StructuredRecord>, StructuredRecord>() {
+    javaRDD.foreachPartition(new VoidFunction<Iterator<StructuredRecord>>() {
 
       @Override
-      public Iterable<StructuredRecord> call(Iterator<StructuredRecord> structuredRecordIterator) throws Exception {
+      public void call(Iterator<StructuredRecord> structuredRecordIterator) throws Exception {
         LOG.info("HBASEXXX");
 
         Job job;
@@ -143,29 +143,8 @@ public class CDCHBaseSink extends SparkSink<StructuredRecord> {
         }
 
         LOG.info("HBASEXXX After exception {}");
-
-        return new Iterable<StructuredRecord>() {
-          @Override
-          public Iterator<StructuredRecord> iterator() {
-            return new Iterator<StructuredRecord>() {
-              @Override
-              public boolean hasNext() {
-                return false;
-              }
-
-              @Override
-              public StructuredRecord next() {
-                return null;
-              }
-
-              @Override
-              public void remove() {
-              }
-            };
-          }
-        };
       }
-    }, true).collect();
+    });
   }
 
 
