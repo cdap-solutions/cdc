@@ -47,18 +47,27 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     List<Schema.Field> schemaFields = new ArrayList<>();
     schemaFields.add(Schema.Field.of("table", Schema.of(Schema.Type.STRING)));
     schemaFields.add(Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING))));
-    schemaFields.addAll(getNullableSchema(DBUtils.getSchemaFields(resultSet)));
+    Schema changeSchema = Schema.recordOf("rec", getNullableSchema(DBUtils.getSchemaFields(resultSet)));
+    schemaFields.add(Schema.Field.of("change", changeSchema));
     Schema schema = Schema.recordOf("DMLRecord", schemaFields);
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
     // 0 th field is tableName
     recordBuilder.set("table", Joiner.on(".").join(tableInformation.getSchemaName(), tableInformation.getName()));
     recordBuilder.set("primary_keys",
                       tableInformation.getPrimaryKeys().toArray(new String[tableInformation.getPrimaryKeys().size()]));
-    for (int i = 1; i <= metadata.getColumnCount(); i++) {
-      Schema.Field field = schemaFields.get(i+1);
-      int sqlColumnType = metadata.getColumnType(i);
-      recordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
+    StructuredRecord.Builder changeRecordBuilder = StructuredRecord.builder(changeSchema);
+//    for (int i = 1; i <= metadata.getColumnCount(); i++) {
+//      Schema.Field field = changeSchema.getFields().get(i - 1);
+//      int sqlColumnType = metadata.getColumnType(i);
+//      changeRecordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
+//    }
+    for (int i = 0; i < changeSchema.getFields().size() - 1; i++) {
+      Schema.Field field = changeSchema.getFields().get(i);
+      int sqlColumnType = metadata.getColumnType(i + 1);
+      changeRecordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
     }
+    StructuredRecord changeRecord = changeRecordBuilder.build();
+    recordBuilder.set("change", changeRecord);
     return recordBuilder.build();
   }
 

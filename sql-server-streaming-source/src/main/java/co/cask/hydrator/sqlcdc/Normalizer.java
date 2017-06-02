@@ -44,8 +44,9 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
   public void transform(StructuredRecord input, Emitter<StructuredRecord> emitter) throws Exception {
     if (input.getSchema().getRecordName().equals("DMLRecord")) {
       LOG.info("Input StructuredRecord is {}", GSON.toJson(input));
-      LOG.info("The op type is {}", input.get("SYS_CHANGE_OPERATION"));
-      String operation = input.get("SYS_CHANGE_OPERATION");
+      StructuredRecord change = input.get("change");
+      LOG.info("The op type is {}", change.get("SYS_CHANGE_OPERATION"));
+      String operation = change.get("SYS_CHANGE_OPERATION");
       StructuredRecord.Builder recordBuilder;
       StructuredRecord record;
       if (operation.equalsIgnoreCase("D")) {
@@ -72,6 +73,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
       }
     } else if (input.getSchema().getRecordName().equals("DDLRecord")) {
       LOG.info("### Input DDL is {}", GSON.toJson(input));
+      emitter.emit(input);
     } else {
       throw new IllegalArgumentException("Unknown Record " + input.getSchema().getRecordName());
     }
@@ -80,22 +82,24 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
 
   private StructuredRecord.Builder getInsertRecord(StructuredRecord input) {
     List<Schema.Field> ddlFields = new LinkedList<>();
-    Schema schema = input.getSchema();
-    for (Schema.Field field : schema.getFields()) {
+    StructuredRecord change = input.get("change");
+    Schema changeSchema = change.getSchema();
+    for (Schema.Field field : changeSchema.getFields()) {
       if (DDL_SYSTEM_FIELD.contains(field.getName().toLowerCase())) {
         continue;
       }
       ddlFields.add(field);
     }
-    Schema ddlDataSchema = Schema.recordOf("after", ddlFields);
+    Schema s = Schema.recordOf("change", ddlFields);
+//    Schema ddlDataSchema = Schema.recordOf("after", ddlFields);
 
-    StructuredRecord.Builder innerRecordBuilder = StructuredRecord.builder(ddlDataSchema);
-    for (Schema.Field field : ddlDataSchema.getFields()) {
-      innerRecordBuilder.set(field.getName(), input.get(field.getName()));
+    StructuredRecord.Builder innerRecordBuilder = StructuredRecord.builder(s);
+    for (Schema.Field field : s.getFields()) {
+      innerRecordBuilder.set(field.getName(), change.get(field.getName()));
     }
 
     Schema cdcSchema = Schema.recordOf("DMLRecord", TABLE_NAME_SCHEMA_FIELD, OP_TYPE_SCHEMA_FIELD, PRIMARY_KEY_FIELD, Schema
-      .Field.of("change", ddlDataSchema));
+      .Field.of("change", s));
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(cdcSchema);
     recordBuilder
