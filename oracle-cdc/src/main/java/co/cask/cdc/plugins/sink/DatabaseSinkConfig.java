@@ -30,7 +30,6 @@ import javax.annotation.Nullable;
  */
 public class DatabaseSinkConfig extends ReferencePluginConfig {
   public static final String CONNECTION_STRING = "connectionString";
-  public static final String TABLE_NAME = "tableName";
   public static final String QUERY = "query";
   public static final String USER = "user";
   public static final String PASSWORD = "password";
@@ -58,16 +57,6 @@ public class DatabaseSinkConfig extends ReferencePluginConfig {
   @Nullable
   @Macro
   public String password;
-
-  @Name(TABLE_NAME)
-  @Description("Name of the database table to write to.")
-  @Macro
-  public String tableName;
-
-  @Name(QUERY)
-  @Description("Create table query. Please specify it if the table does not exist")
-  @Nullable
-  public String query;
 
   @Name(SCHEMA)
   @Description("Output schema for the table.")

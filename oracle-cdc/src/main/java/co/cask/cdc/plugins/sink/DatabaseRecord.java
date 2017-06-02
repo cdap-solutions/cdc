@@ -30,6 +30,8 @@ import java.io.IOException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
+import java.util.List;
 
 /**
  * Database writable
@@ -76,45 +78,7 @@ public class DatabaseRecord implements Writable, DBWritable, Configurable {
   }
 
   public void write(DataOutput out) throws IOException {
-    String operationType = record.get("op_type");
-    switch (operationType) {
-      case "I":
-        StructuredRecord insertRecord = record.get("after");
-        for (Schema.Field field : insertRecord.getSchema().getFields()) {
-          if (!field.getName().endsWith("_isMissing")) {
-            String fieldName = field.getName();
-            Schema.Type fieldType = getNonNullableType(field);
-            Object fieldValue = insertRecord.get(fieldName);
-            addValuesInDataOutput(out, fieldType, fieldValue);
-          }
-        }
-        break;
-      case "U":
-        StructuredRecord updateRecord = record.get("after");
-        for (Schema.Field field : updateRecord.getSchema().getFields()) {
-          if (!field.getName().endsWith("_isMissing")) {
-            String fieldName = field.getName();
-            Schema.Type fieldType = getNonNullableType(field);
-            Object fieldValue = updateRecord.get(fieldName);
-            addValuesInDataOutput(out, fieldType, fieldValue);
-          }
-        }
-        break;
-      case "D":
-        StructuredRecord deleteRecord = record.get("before");
-        for (Schema.Field field : deleteRecord.getSchema().getFields()) {
-          if (!field.getName().endsWith("_isMissing")) {
-            String fieldName = field.getName();
-            Schema.Type fieldType = getNonNullableType(field);
-            Object fieldValue = deleteRecord.get(fieldName);
-            addValuesInDataOutput(out, fieldType, fieldValue);
-          }
-        }
-        break;
-      default:
-        throw new RuntimeException("Illegal operation type " + operationType);
-
-    }
+    // no-op
   }
 
   /**
@@ -124,62 +88,46 @@ public class DatabaseRecord implements Writable, DBWritable, Configurable {
    */
   public void write(PreparedStatement stmt) throws SQLException {
     String operationType = record.get("op_type");
+    List<String> primaryKeys = record.get("primary_keys");
+    StructuredRecord change = record.get("change");
+    List<Schema.Field> fieldNames = change.getSchema().getFields();
     switch (operationType) {
       case "I":
-        StructuredRecord insertRecord = record.get("after");
         int i = 1;
-        for (Schema.Field field : insertRecord.getSchema().getFields()) {
-          if (!field.getName().endsWith("_isMissing")) {
-            String fieldName = field.getName();
-            Schema.Type fieldType = getNonNullableType(field);
-            Object fieldValue = insertRecord.get(fieldName);
-            addValuesInPreparedStatement(stmt, fieldType, i, fieldValue);
-            i++;
-          }
-        }
+        fillInRecordValues(stmt, change, fieldNames, i);
         break;
       case "U":
-        StructuredRecord updateRecordAfter = record.get("after");
-        StructuredRecord updateRecordBefore = record.get("before");
         i = 1;
         // fill in updated values
-        for (Schema.Field field : updateRecordAfter.getSchema().getFields()) {
-          if (!field.getName().endsWith("_isMissing")) {
-            String fieldName = field.getName();
-            Schema.Type fieldType = getNonNullableType(field);
-            Object fieldValue = updateRecordAfter.get(fieldName);
-            addValuesInPreparedStatement(stmt, fieldType, i, fieldValue);
-            i++;
-          }
-        }
+        i = fillInRecordValues(stmt, change, fieldNames, i);
 
-        // fill in non-updated values
-        for (Schema.Field field : updateRecordBefore.getSchema().getFields()) {
-          if (!field.getName().endsWith("_isMissing")) {
-            String fieldName = field.getName();
-            Schema.Type fieldType = getNonNullableType(field);
-            Object fieldValue = updateRecordBefore.get(fieldName);
-            addValuesInPreparedStatement(stmt, fieldType, i, fieldValue);
-            i++;
-          }
-        }
+        // fill in primary key values
+        fillInPrimaryKeyValues(stmt, primaryKeys, change, i);
         break;
       case "D":
-        StructuredRecord deleteRecord = record.get("before");
         i = 1;
-        for (Schema.Field field : deleteRecord.getSchema().getFields()) {
-          if (!field.getName().endsWith("_isMissing")) {
-            String fieldName = field.getName();
-            Schema.Type fieldType = getNonNullableType(field);
-            Object fieldValue = deleteRecord.get(fieldName);
-            addValuesInPreparedStatement(stmt, fieldType, i, fieldValue);
-            i++;
-          }
-        }
+        fillInPrimaryKeyValues(stmt, primaryKeys, change, i);
         break;
       default:
         throw new RuntimeException("Illegal operation type " + operationType);
 
+    }
+  }
+
+  private int fillInRecordValues(PreparedStatement stmt, StructuredRecord change, List<Schema.Field> fieldNames,
+                                 int i) throws SQLException {
+    for (Schema.Field field : fieldNames) {
+      addValuesInPreparedStatement(stmt, getNonNullableType(field), i, change.get(field.getName()));
+      i++;
+    }
+    return i;
+  }
+
+  private void fillInPrimaryKeyValues(PreparedStatement stmt, List<String> primaryKeys, StructuredRecord change, int i)
+    throws SQLException {
+    for (String field : primaryKeys) {
+      addValuesInPreparedStatement(stmt, getNonNullableType(change.getSchema().getField(field)), i, change.get(field));
+      i++;
     }
   }
 
@@ -188,57 +136,56 @@ public class DatabaseRecord implements Writable, DBWritable, Configurable {
 
     switch (fieldType) {
       case STRING:
+        if (fieldValue == null) {
+          stmt.setString(sqlIndex, null);
+          return;
+        }
         stmt.setString(sqlIndex, (String) fieldValue);
         break;
       case BOOLEAN:
+        if (fieldValue == null) {
+          stmt.setNull(sqlIndex, Types.BIT);
+          return;
+        }
         stmt.setBoolean(sqlIndex, (Boolean) fieldValue);
         break;
       case INT:
+        if (fieldValue == null) {
+          stmt.setNull(sqlIndex, Types.INTEGER);
+          return;
+        }
         stmt.setInt(sqlIndex, (Integer) fieldValue);
         break;
       case LONG:
+        if (fieldValue == null) {
+          stmt.setNull(sqlIndex, Types.BIGINT);
+          return;
+        }
         stmt.setLong(sqlIndex, (Long) fieldValue);
         break;
       case FLOAT:
+        if (fieldValue == null) {
+          stmt.setNull(sqlIndex, Types.REAL);
+          return;
+        }
         stmt.setFloat(sqlIndex, (Float) fieldValue);
         break;
       case DOUBLE:
+        if (fieldValue == null) {
+          stmt.setNull(sqlIndex, Types.FLOAT);
+          return;
+        }
         stmt.setDouble(sqlIndex, (Double) fieldValue);
         break;
       case BYTES:
+        if (fieldValue == null) {
+          stmt.setNull(sqlIndex, Types.BINARY);
+          return;
+        }
         stmt.setBytes(sqlIndex, (byte[]) fieldValue);
         break;
       default:
         throw new SQLException(String.format("Unsupported datatype: %s with value: %s.", fieldType, fieldValue));
-    }
-  }
-
-  private void addValuesInDataOutput(DataOutput out, Schema.Type fieldType, Object fieldValue)  throws IOException {
-
-    switch (fieldType) {
-      case STRING:
-        out.writeUTF((String) fieldValue);
-        break;
-      case BOOLEAN:
-        out.writeBoolean((Boolean) fieldValue);
-        break;
-      case INT:
-        out.writeInt((Integer) fieldValue);
-        break;
-      case LONG:
-        out.writeLong((Long) fieldValue);
-        break;
-      case FLOAT:
-        out.writeFloat((Float) fieldValue);
-        break;
-      case DOUBLE:
-        out.writeDouble((Double) fieldValue);
-        break;
-      case BYTES:
-        out.write((byte[]) fieldValue);
-        break;
-      default:
-        throw new IOException(String.format("Unsupported datatype: %s with value: %s.", fieldType, fieldValue));
     }
   }
 

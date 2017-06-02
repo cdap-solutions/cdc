@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -58,34 +59,18 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
   public class DatabaseRecordWriter extends RecordWriter<DatabaseRecord,NullWritable> {
 
     private Connection connection;
-    private Map<String, PreparedStatement> map;
-    private String tableName;
 
     public DatabaseRecordWriter() throws SQLException {
     }
 
-    public DatabaseRecordWriter(Connection connection, String tableName) throws SQLException {
+    public DatabaseRecordWriter(Connection connection) throws SQLException {
       this.connection = connection;
-      this.map = new HashMap<>();
-      this.tableName = tableName;
-    }
-
-    public Connection getConnection() {
-      return connection;
-    }
-
-    public PreparedStatement getStatement(String type) {
-      return map.get(type);
     }
 
     /** {@inheritDoc} */
     public void close(TaskAttemptContext context) throws IOException {
       try {
-        commitDML();
-        for (PreparedStatement statement : map.values()) {
-          statement.close();
-        }
-        map.clear();
+        commitChanges();
         connection.close();
       } catch (SQLException e) {
         LOG.warn(StringUtils.stringifyException(e));
@@ -93,11 +78,8 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
       }
     }
 
-    private void commitDML() throws IOException {
+    private void commitChanges() throws IOException {
       try {
-        for (PreparedStatement statement : map.values()) {
-          statement.executeBatch();
-        }
         connection.commit();
       } catch (SQLException e) {
         try {
@@ -112,133 +94,188 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
 
     @Override
     public void write(DatabaseRecord record, NullWritable nullWritable) throws IOException {
+      PreparedStatement preparedStatement = null;
       try {
         StructuredRecord input = record.getRecord();
+        String namespacedTableName = input.get("table");
+        String tableName = namespacedTableName.split("\\.")[1];
 
         if (input.getSchema().getRecordName().equals("DDLRecord")) {
-          Statement selectStatement = connection.createStatement();
-          // get first record from the table to get existing table schema
-          ResultSet rs = selectStatement.executeQuery(String.format("SELECT TOP 1 * FROM %s", tableName));
-          ResultSetMetaData resultSetMetadata = rs.getMetaData();
-
-          Set<String> oldColumns = new HashSet<>();
-          // JDBC driver column indices start with 1
-          for (int i = 0; i < rs.getMetaData().getColumnCount(); i++) {
-            String name = resultSetMetadata.getColumnName(i + 1);
-            oldColumns.add(name);
+          if (!tableExists(connection, tableName)) {
+            // Do not do alter on non-existing table. If table does not exist,
+            // defer table creation when first insert happens
+            return;
           }
-          selectStatement.close();
-
-          // make change to schema
-          org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse((String) input.get("schema"));
-          Schema newSchema = AvroConverter.fromAvroSchema(avroSchema);
-          Schema.Field beforeField = newSchema.getField("before");
-          Set<String> newColumns = new HashSet<>();
-          Map<String,  Schema> newColumnsMap = new HashMap<>();
-          for (Schema.Field field : beforeField.getSchema().getNonNullable().getFields()) {
-            if (!field.getName().endsWith("_isMissing")) {
-              // This is a column in the db, add it to set
-              newColumns.add(field.getName());
-              newColumnsMap.put(field.getName(), field.getSchema());
-            }
-          }
-
-          Sets.SetView<String> columnDiff = Sets.symmetricDifference(newColumns, oldColumns);
-          Set<String> columnsToDelete = new HashSet<>();
-          Set<String> columnsToAdd = new HashSet<>();
-          for (String column : columnDiff) {
-            if (oldColumns.contains(column)) {
-              // This column is removed
-              columnsToDelete.add(column);
-            } else {
-              // This column is added
-              columnsToAdd.add(column);
-            }
-          }
-
-          if (!columnsToAdd.isEmpty()) {
-            newColumnsMap.keySet().retainAll(columnsToAdd);
-          } else {
-            newColumnsMap.clear();
-          }
-
-          LOG.debug("Columns to add {} and Columns to delete {}", columnsToAdd, columnsToDelete);
-
-          if (!columnDiff.isEmpty()) {
-            commitDML();
-            alterTable(newColumnsMap, columnsToDelete);
-            // Clear map of prepared statements so that new statements are generated as per new schema
-            map.clear();
-          }
+          alterTableSchema(input, tableName);
           return;
         }
 
         String operationType = input.get("op_type");
-        PreparedStatement preparedStatement;
+        List<String> primaryKeys = input.get("primary_keys");
+        StructuredRecord change = input.get("change");
+
+        List<Schema.Field> fields = change.getSchema().getFields();
+
+        if (!tableExists(connection, tableName)) {
+          // Create table if it does not exist
+          createTable(tableName, primaryKeys, change, fields);
+          return;
+        }
+
         switch (operationType) {
           case "I":
-            if (!map.containsKey("I")) {
-              StructuredRecord insertRecord = input.get("after");
-              // create the insert query, construct prepared statement and cache the prepared statement
-              String insertQuery = constructInsertQuery(tableName, insertRecord.getSchema().getFields());
-              preparedStatement = connection.prepareStatement(insertQuery);
-              map.put("I", preparedStatement);
-            } else {
-              preparedStatement = map.get("I");
-            }
+            preparedStatement = connection.prepareStatement(constructInsertQuery(tableName, fields, change));
             record.write(preparedStatement);
-            preparedStatement.addBatch();
             break;
           case "U":
-            if (!map.containsKey("U")) {
-              // create the update query, construct prepared statement and cache the prepared statement
-              StructuredRecord updateRecord = input.get("after");
-              List<String> primaryKeys = input.get("primary_keys");
-              String updateQuery = constructUpdateQuery(tableName, updateRecord.getSchema().getFields(), primaryKeys);
-              preparedStatement = connection.prepareStatement(updateQuery);
-              map.put("U", preparedStatement);
-            } else {
-              preparedStatement = map.get("U");
-            }
+            preparedStatement = connection.prepareStatement(constructUpdateQuery(tableName,
+                                                                                 change, fields, primaryKeys));
             record.write(preparedStatement);
-            preparedStatement.addBatch();
             break;
           case "D":
-            if (!map.containsKey("D")) {
-              StructuredRecord deleteRecord = input.get("before");
-              // create the delete query, construct prepared statement and cache the prepared statement
-              String deleteQuery = constructDeleteQuery(tableName, deleteRecord.getSchema().getFields());
-              preparedStatement = connection.prepareStatement(deleteQuery);
-              map.put("D", preparedStatement);
-            } else {
-              preparedStatement = map.get("D");
-            }
+            preparedStatement = connection.prepareStatement(constructDeleteQuery(tableName, primaryKeys));
             record.write(preparedStatement);
-            preparedStatement.addBatch();
             break;
           case "T":
-            if (!map.containsKey("T")) {
-              // create the truncate query, construct prepared statement and cache the prepared statement
-              // Example: TRUNCATE TABLE tableName
-              String deleteQuery = "TRUNCATE TABLE " + tableName;
-              preparedStatement = connection.prepareStatement(deleteQuery);
-              map.put("T", preparedStatement);
-            } else {
-              preparedStatement = map.get("T");
-            }
-            // do not need to add any field values in truncate statement, just add it to batch for execution
-            preparedStatement.addBatch();
+            // create the truncate query, construct prepared statement and cache the prepared statement
+            // Example: TRUNCATE TABLE tableName
+            preparedStatement = connection.prepareStatement("TRUNCATE TABLE " + tableName);
             break;
           default:
             throw new RuntimeException("Illegal operation type " + operationType);
         }
       } catch (Exception e) {
-        e.printStackTrace();
         throw new IOException(e);
+      } finally {
+        if (preparedStatement != null) {
+          try {
+            preparedStatement.executeUpdate();
+            preparedStatement.close();
+          } catch (SQLException e) {
+            throw new IOException(e);
+          }
+        }
       }
     }
 
-    private void alterTable(Map<String, Schema> columnsToAdd, Set<String> columnsToDelete) throws SQLException {
+    private void createTable(String tableName, List<String> primaryKeys, StructuredRecord change,
+                             List<Schema.Field> fields) throws TypeConversionException, SQLException, IOException {
+        /*
+        CREATE TABLE employee(
+        EMPNO     BIGINT,
+        ENAME     VARCHAR(255),
+        JOB    VARCHAR(255),
+        MGR   BIGINT,
+        HIREDATE VARCHAR(255),
+        SAL       BIGINT,
+        COMM       BIGINT,
+        DEPTNO       BIGINT,
+        EMP_ADDRESS  VARCHAR(255),
+        PRIMARY KEY (ENAME, EMPNO));
+         */
+
+      StringBuilder query = new StringBuilder();
+      query.append("CREATE TABLE ").append(tableName);
+
+      if (fields.size() > 0 && fields.get(0) != null) {
+        query.append(" (");
+        for (int i = 0; i < fields.size(); i++) {
+          if (i > 0 && i < fields.size()) {
+            query.append(", ");
+          }
+          query.append(fields.get(i).getName()).append(" ").append(toDatabaseType(fields.get(i).getName(),
+                                                                                  fields.get(i).getSchema()));
+        }
+
+        if (primaryKeys.size() > 0) {
+          query.append(", PRIMARY KEY (");
+
+          for (int i = 0; i < primaryKeys.size(); i++) {
+            if (i > 0 && i < fields.size()) {
+              query.append(", ");
+            }
+            query.append(primaryKeys.get(i));
+          }
+          query.append(")");
+        }
+        query.append(")");
+      }
+
+      LOG.debug("Create statement is: {}", query.toString());
+
+      PreparedStatement preparedStatement = connection.prepareStatement(query.toString());
+      preparedStatement.executeUpdate();
+      commitChanges();
+      preparedStatement.close();
+    }
+
+
+    private boolean tableExists(Connection connection, String tableName) throws SQLException {
+      DatabaseMetaData md = connection.getMetaData();
+      ResultSet rs = md.getTables(null, null, tableName, null);
+      if (rs.next()) {
+        return true;
+      }
+      return false;
+    }
+
+    private void alterTableSchema(StructuredRecord input, String tableName) throws SQLException, IOException {
+      Statement selectStatement = connection.createStatement();
+      // get first record from the table to get existing table schema
+      ResultSet rs = selectStatement.executeQuery(String.format("SELECT TOP 1 * FROM %s", tableName));
+      ResultSetMetaData resultSetMetadata = rs.getMetaData();
+
+      Set<String> oldColumns = new HashSet<>();
+      // JDBC driver column indices start with 1
+      for (int i = 0; i < rs.getMetaData().getColumnCount(); i++) {
+        String name = resultSetMetadata.getColumnName(i + 1);
+        oldColumns.add(name);
+      }
+      selectStatement.close();
+
+      LOG.debug("OldColumns {}", oldColumns);
+
+      org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse((String) input.get("schema"));
+      Schema newSchema = AvroConverter.fromAvroSchema(avroSchema);
+      Set<String> newColumns = new HashSet<>();
+      Map<String,  Schema> newColumnsMap = new HashMap<>();
+
+      for (Schema.Field field : newSchema.getFields()) {
+        newColumns.add(field.getName());
+        newColumnsMap.put(field.getName(), field.getSchema());
+      }
+
+      LOG.debug("NewColumns {}", newColumns);
+
+      Sets.SetView<String> columnDiff = Sets.symmetricDifference(newColumns, oldColumns);
+      Set<String> columnsToDelete = new HashSet<>();
+      Set<String> columnsToAdd = new HashSet<>();
+      for (String column : columnDiff) {
+        if (oldColumns.contains(column)) {
+          // This column is removed
+          columnsToDelete.add(column);
+        } else {
+          // This column is added
+          columnsToAdd.add(column);
+        }
+      }
+
+      if (!columnsToAdd.isEmpty()) {
+        newColumnsMap.keySet().retainAll(columnsToAdd);
+      } else {
+        newColumnsMap.clear();
+      }
+
+      LOG.debug("Columns to add {} and Columns to delete {}", columnsToAdd, columnsToDelete);
+
+      if (!columnDiff.isEmpty()) {
+        commitChanges();
+        alterTable(tableName, newColumnsMap, columnsToDelete);
+      }
+    }
+
+    private void alterTable(String tableName, Map<String, Schema> columnsToAdd,
+                            Set<String> columnsToDelete) throws SQLException {
       // add columns
       String alterQuery = "ALTER TABLE " + tableName + " ADD ";
       String prefix = "";
@@ -253,13 +290,15 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
       }
 
       if (!columnsToAdd.isEmpty()) {
+        LOG.debug("Alter query to add columns {}", alterQuery);
         executeDDL(alterQuery);
       }
 
       // drop columns
       if (!columnsToDelete.isEmpty()) {
-        String dropColumns = "ALTER TABLE " + tableName + " DROP COLUMN " + Joiner.on(", ").join(columnsToDelete);
-        executeDDL(dropColumns);
+        String dropQuery = "ALTER TABLE " + tableName + " DROP COLUMN " + Joiner.on(", ").join(columnsToDelete);
+        LOG.debug("Alter query to drop columns {}", dropQuery);
+        executeDDL(dropQuery);
       }
       // commit both the updates to the table
       connection.commit();
@@ -289,11 +328,11 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
     } else if (type == Schema.Type.BYTES) {
       return "BINARY";
     } else if (type == Schema.Type.DOUBLE) {
-      return "DOUBLE";
-    } else if (type == Schema.Type.FLOAT) {
       return "FLOAT";
+    } else if (type == Schema.Type.FLOAT) {
+      return "REAL";
     } else if (type == Schema.Type.BOOLEAN) {
-      return "BOOLEAN";
+      return "BIT";
     } else if (type == Schema.Type.UNION) { // Recursively drill down into the non-nullable type.
       return toDatabaseType(name, schema.getNonNullable());
     } else {
@@ -304,8 +343,8 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
     }
   }
 
-  public String constructInsertQuery(String tableName, List<Schema.Field> fieldNames) {
-    if(fieldNames == null) {
+  public String constructInsertQuery(String tableName, List<Schema.Field> fieldNames, StructuredRecord change) {
+    if (fieldNames == null) {
       throw new IllegalArgumentException("Field names may not be null");
     }
 
@@ -316,47 +355,44 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
     if (fieldNames.size() > 0 && fieldNames.get(0) != null) {
       query.append(" (");
       for (int i = 0; i < fieldNames.size(); i++) {
-        if (!fieldNames.get(i).getName().endsWith("_isMissing")) {
-          if (i > 0 && i < fieldNames.size() - 1) {
-            query.append(", ");
-          }
-          query.append(fieldNames.get(i).getName());
+        if (i > 0 && i < fieldNames.size()) {
+          query.append(", ");
         }
+        query.append(fieldNames.get(i).getName());
       }
+
       query.append(")");
     }
+
     query.append(" VALUES (");
 
     for (int i = 0; i < fieldNames.size(); i++) {
-      if (!fieldNames.get(i).getName().endsWith("_isMissing")) {
-        if (i > 0 && i < fieldNames.size() - 1) {
-          query.append(", ");
-        }
-        query.append("?");
+      if (i > 0 && i < fieldNames.size()) {
+        query.append(", ");
       }
+      query.append("?");
     }
+
     query.append(")");
+
+    LOG.debug("Insert query is {}", query.toString());
+
     return query.toString();
   }
 
-  private String constructUpdateQuery(String tableName, List<Schema.Field> fieldNames, List<String> primaryKeys) {
-    if(fieldNames == null) {
-      throw new IllegalArgumentException("Field names may not be null");
-    }
+  private String constructUpdateQuery(String tableName, StructuredRecord change, List<Schema.Field> fieldNames,
+                                      List<String> primaryKeys) {
 
     // Example: UPDATE table_name SET column1 = value1, column2 = value2 WHERE primarykey1 = 1 AND primarykey2 = 2
     StringBuilder query = new StringBuilder();
     query.append("UPDATE ").append(tableName).append(" SET ");
 
-    // generate SET Values
     if (fieldNames.size() > 0 && fieldNames.get(0) != null) {
       for (int i = 0; i < fieldNames.size(); i++) {
-        if (!fieldNames.get(i).getName().endsWith("_isMissing")) {
-          if (i > 0 && i < fieldNames.size() - 1) {
-            query.append(", ");
-          }
-          query.append(fieldNames.get(i).getName()).append(" = ?");
+        if (i > 0 && i < fieldNames.size()) {
+          query.append(", ");
         }
+        query.append(fieldNames.get(i).getName()).append(" = ?");
       }
     }
 
@@ -364,44 +400,37 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
 
     // generate WHERE Clause
     for (int i = 0; i < primaryKeys.size(); i++) {
-      if (i > 0 && i < fieldNames.size() - 1) {
+      if (i > 0 && i < fieldNames.size()) {
         query.append(" AND ");
       }
       query.append(primaryKeys.get(i)).append(" = ?");
     }
 
+    LOG.debug("Update query is {}", query.toString());
     return query.toString();
   }
 
-  private String constructDeleteQuery(String tableName, List<Schema.Field> fieldNames) {
-    if(fieldNames == null) {
-      throw new IllegalArgumentException("Field names may not be null");
-    }
+  private String constructDeleteQuery(String tableName, List<String> primaryKeys) {
 
     // Example: DELETE FROM tableName WHERE col1 = ? AND col2 = ? AND col3 = ?
     StringBuilder query = new StringBuilder();
     query.append("DELETE FROM ").append(tableName).append(" WHERE ");
 
-    if (fieldNames.size() > 0 && fieldNames.get(0) != null) {
-      for (int i = 0; i < fieldNames.size(); i++) {
-        if (!fieldNames.get(i).getName().endsWith("_isMissing")) {
-          if (i > 0 && i < fieldNames.size() - 1) {
-            query.append(" AND ");
-          }
-          query.append(fieldNames.get(i).getName()).append(" = ?");
-        }
+    for (int i = 0; i < primaryKeys.size(); i++) {
+      if (i > 0 && i < primaryKeys.size()) {
+        query.append(" AND ");
       }
+      query.append(primaryKeys.get(i)).append(" = ?");
     }
+
+    LOG.debug("Delete query is: {}", query.toString());
     return query.toString();
   }
 
   public RecordWriter<DatabaseRecord,NullWritable> getRecordWriter(TaskAttemptContext context) throws IOException {
-    DBConfiguration dbConf = new DBConfiguration(context.getConfiguration());
-    String tableName = dbConf.getOutputTableName();
-
     try {
       Connection connection = getConnection(context.getConfiguration());
-      return new DatabaseRecordWriter(connection, tableName);
+      return new DatabaseRecordWriter(connection);
     } catch (Exception ex) {
       throw new IOException(ex.getMessage());
     }

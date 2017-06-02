@@ -35,13 +35,6 @@ import com.google.common.base.Strings;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapred.lib.db.DBConfiguration;
 
-import java.sql.Connection;
-import java.sql.DatabaseMetaData;
-import java.sql.Driver;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -70,49 +63,6 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
     // Checks if that we are writing with has been constructed correctly.
     Schema writeSchema = config.getSchema();
     pipelineConfigurer.getStageConfigurer().setOutputSchema(writeSchema);
-
-    // if connection string, table name, username or password are macros, we defer the creation of table to initialize.
-    if (config.containsMacro("connectionString") || config.containsMacro("tableName") ||
-      config.containsMacro("user") || config.containsMacro("password")) {
-      return;
-    }
-
-    createTable();
-  }
-
-  private void createTable() {
-    if (!Strings.isNullOrEmpty(config.query)) {
-      try {
-        Object driver = Class.forName(JDBC_DRIVER).newInstance();
-        DriverManager.registerDriver((Driver) driver);
-        Connection connection = DriverManager.getConnection(config.connectionString, config.user, config.password);
-        if (verifyIfTableExists(connection)) {
-          connection.close();
-          return;
-        }
-        Statement statement = connection.createStatement();
-        if (Strings.isNullOrEmpty(config.query)) {
-          throw new IllegalArgumentException(String.format("Table %s does not exist. Please create it by providing " +
-                                                             "create query", config.tableName));
-        }
-        statement.execute(config.query);
-        statement.close();
-        connection.close();
-        DriverManager.deregisterDriver((Driver) driver);
-      } catch (Exception e) {
-        throw new IllegalArgumentException(String.format("Exception while creating table %s: ", config.tableName), e);
-      }
-    }
-  }
-
-  private boolean verifyIfTableExists(Connection connection) throws SQLException {
-    DatabaseMetaData md = connection.getMetaData();
-    ResultSet rs = md.getTables(null, null, config.tableName, null);
-    if (rs.next()) {
-      // table already exists, so log a warning and return
-      return true;
-    }
-    return false;
   }
 
   @Override
@@ -130,11 +80,6 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
 
   @Override
   public void prepareRun(BatchSinkContext context) throws Exception {
-    // If there was a macro specified, then we attempt to create the
-    // table here during initialization. If it's not a macro, then we
-    // just open the the table and proceed.
-    createTable();
-    // make sure that the table exists
     context.addOutput(Output.of(config.referenceName, new DBOutputFormatProvider(config)));
   }
 
@@ -157,7 +102,6 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
       if (dbSinkConfig.password != null) {
         conf.put(DBConfiguration.PASSWORD_PROPERTY, dbSinkConfig.password);
       }
-      conf.put(DBConfiguration.OUTPUT_TABLE_NAME_PROPERTY, dbSinkConfig.tableName);
     }
 
     @Override
