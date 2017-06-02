@@ -14,7 +14,7 @@
  * the License.
  */
 
-package co.cask.cdc.plugins.compute;
+package co.cask.cdc.plugins.sink;
 
 /**
  * Exception thrown when there is issue with type conversion from CDAP pipeline schema to Kudu.

@@ -139,7 +139,6 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
           "broker list.", topicName, partitionId));
     }
 
-
     Map<TopicAndPartition, Long> offsets = new HashMap<>();
     offsets.put(topicAndPartition, response.offsets(topicName, partitionId)[0]);
 
