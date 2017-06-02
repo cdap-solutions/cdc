@@ -47,7 +47,7 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     List<Schema.Field> schemaFields = new ArrayList<>();
     schemaFields.add(Schema.Field.of("table", Schema.of(Schema.Type.STRING)));
     schemaFields.add(Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING))));
-    Schema changeSchema = Schema.recordOf("rec", getNullableSchema(DBUtils.getSchemaFields(resultSet)));
+    Schema changeSchema = Schema.recordOf("rec", DBUtils.getSchemaFields(resultSet));
     schemaFields.add(Schema.Field.of("change", changeSchema));
     Schema schema = Schema.recordOf("DMLRecord", schemaFields);
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);

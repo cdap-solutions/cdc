@@ -40,7 +40,7 @@ public class ResultSetToDDLRecord extends AbstractFunction1<ResultSet, Structure
     System.out.println("### The tableschema for DDL is " + schemaName + " " + tableName);
 
     StructuredRecord.Builder builder = StructuredRecord.builder(DDL_SCHEMA);
-    builder.set("table", schemaName + "_" + tableName);
+    builder.set("table", schemaName + "." + tableName);
     builder.set("schema", tableSchema.toString());
     return builder.build();
   }
