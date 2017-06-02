@@ -27,12 +27,10 @@ import javax.annotation.Nullable;
  */
 public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
 
-  private final String schemaName;
-  private final String tableName;
+  TableInformation tableInformation;
 
-  public ResultSetToDMLRecord(String schemaName, String tableName) {
-    this.schemaName = schemaName;
-    this.tableName = tableName;
+  public ResultSetToDMLRecord(TableInformation tableInformation) {
+    this.tableInformation = tableInformation;
   }
 
   public StructuredRecord apply(ResultSet row) {
@@ -47,14 +45,17 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     ResultSetMetaData metadata = resultSet.getMetaData();
     // Nullable schema because for delete we will not have data in table even though the columns are non-nullable
     List<Schema.Field> schemaFields = new ArrayList<>();
-    schemaFields.add(Schema.Field.of("tableName", Schema.of(Schema.Type.STRING)));
+    schemaFields.add(Schema.Field.of("table", Schema.of(Schema.Type.STRING)));
+    schemaFields.add(Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING))));
     schemaFields.addAll(getNullableSchema(DBUtils.getSchemaFields(resultSet)));
     Schema schema = Schema.recordOf("DMLRecord", schemaFields);
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(schema);
     // 0 th field is tableName
-    recordBuilder.set("tableName", Joiner.on(".").join(schemaName, tableName));
+    recordBuilder.set("table", Joiner.on(".").join(tableInformation.getSchemaName(), tableInformation.getName()));
+    recordBuilder.set("primary_keys",
+                      tableInformation.getPrimaryKeys().toArray(new String[tableInformation.getPrimaryKeys().size()]));
     for (int i = 1; i <= metadata.getColumnCount(); i++) {
-      Schema.Field field = schemaFields.get(i);
+      Schema.Field field = schemaFields.get(i+1);
       int sqlColumnType = metadata.getColumnType(i);
       recordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
     }

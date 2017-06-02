@@ -28,9 +28,11 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
   private static final Set<String> DDL_SYSTEM_FIELD = Sets.newHashSet("SYS_CHANGE_CREATION_VERSION",
                                                                       "SYS_CHANGE_OPERATION", "SYS_CHANGE_VERSION");
 
-  private static final Schema.Field TABLE_NAME_SCHEMA_FIELD = Schema.Field.of("tablename", Schema.of(Schema.Type
-                                                                                                       .STRING));
+  private static final Schema.Field TABLE_NAME_SCHEMA_FIELD = Schema.Field.of("table", Schema.of(Schema.Type
+                                                                                                   .STRING));
   private static final Schema.Field OP_TYPE_SCHEMA_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
+  private static final Schema.Field PRIMARY_KEY_FIELD = Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of
+    (Schema.Type.STRING)));
 
   @Override
   public void initialize(TransformContext context) throws Exception {
@@ -92,13 +94,14 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
       innerRecordBuilder.set(field.getName(), input.get(field.getName()));
     }
 
-    Schema cdcSchema = Schema.recordOf("cdc", TABLE_NAME_SCHEMA_FIELD, OP_TYPE_SCHEMA_FIELD, Schema.Field.of
-      ("innerRecord", ddlDataSchema));
+    Schema cdcSchema = Schema.recordOf("DMLRecord", TABLE_NAME_SCHEMA_FIELD, OP_TYPE_SCHEMA_FIELD, PRIMARY_KEY_FIELD, Schema
+      .Field.of("change", ddlDataSchema));
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(cdcSchema);
     recordBuilder
-      .set(TABLE_NAME_SCHEMA_FIELD.getName(), input.get("tableName"))
-      .set("innerRecord", innerRecordBuilder.build());
+      .set(TABLE_NAME_SCHEMA_FIELD.getName(), input.get("table"))
+      .set(PRIMARY_KEY_FIELD.getName(), input.get("primary_keys"))
+      .set("change", innerRecordBuilder.build());
     return recordBuilder;
   }
 }

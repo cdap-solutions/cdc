@@ -10,12 +10,9 @@ import co.cask.cdap.etl.api.streaming.StreamingSource;
 import co.cask.hydrator.plugin.DBUtils;
 import com.microsoft.sqlserver.jdbc.SQLServerDriver;
 import org.apache.spark.api.java.function.Function;
-import org.apache.spark.api.java.function.PairFunction;
 import org.apache.spark.streaming.api.java.JavaDStream;
-import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.Tuple2;
 import scala.reflect.ClassTag;
 
 import java.sql.Connection;

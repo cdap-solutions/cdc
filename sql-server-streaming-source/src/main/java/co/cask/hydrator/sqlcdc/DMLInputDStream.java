@@ -115,7 +115,7 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
     LOG.info("### the prev {} curr {}", prev, currentTrackingVersion);
     //TODO Currently we are not partitioning the data. We should partition it for scalability
     return new JdbcRDD<>(sparkC, dbConnection, stmt, prev, this.currentTrackingVersion, 1,
-                         new ResultSetToDMLRecord(tableInformation.getSchemaName(), tableInformation.getName()),
+                         new ResultSetToDMLRecord(tableInformation),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }
 
