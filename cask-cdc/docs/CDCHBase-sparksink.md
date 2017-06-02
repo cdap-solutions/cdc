@@ -101,7 +101,7 @@ The following configurations collectively specify the address of the target HBas
 | **zookeeperParent** | **No** | `/hbase` | Specifies the HBase parent node. |
 | **zookeeperQuorum** | **No** | `localhost` | The web/IP address of the HBase server. |
 
-Note that your HBase server does not necessarily run on the address specified by the default configurations. Check before you deploy and run.
+Note that your HBase server does not necessarily run on the address specified by the default configurations. Check before you use this plugin.
  
 Build
 -----
