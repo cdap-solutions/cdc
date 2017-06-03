@@ -173,7 +173,7 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
   private byte[] getRowKey(List<String> primaryKeys, StructuredRecord change) {
     // the primary keys are always in sorted order
     List<String> primaryValues = new ArrayList<>();
-    String [] primaryKeysArray = (String []) primaryKeys.toArray();
+    String [] primaryKeysArray = primaryKeys.toArray(new String[primaryKeys.size()]);
     Arrays.sort(primaryKeysArray);
     for(String primaryKey : primaryKeysArray) {
       primaryValues.add(change.get(primaryKey).toString());
