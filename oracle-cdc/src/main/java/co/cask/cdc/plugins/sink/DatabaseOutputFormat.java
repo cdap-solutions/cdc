@@ -54,7 +54,8 @@ import java.util.Set;
  */
 public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWritable> {
   private static final Logger LOG = LoggerFactory.getLogger(DatabaseOutputFormat.class);
-  private Object driver;
+  private Driver driver;
+  private JDBCDriverShim driverShim;
 
   public class DatabaseRecordWriter extends RecordWriter<DatabaseRecord,NullWritable> {
 
@@ -74,6 +75,12 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
         connection.close();
       } catch (SQLException e) {
         LOG.warn(StringUtils.stringifyException(e));
+        throw new IOException(e);
+      }
+
+      try {
+        DriverManager.deregisterDriver(driverShim);
+      } catch (SQLException e) {
         throw new IOException(e);
       }
     }
@@ -443,8 +450,7 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
         // throws SQLException if no suitable driver is found
         DriverManager.getDriver(url);
       } catch (SQLException e) {
-
-
+        if (driverShim == null) {
           if (driver == null) {
             ClassLoader classLoader = conf.getClassLoader();
             @SuppressWarnings("unchecked")
@@ -452,10 +458,10 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
               (Class<? extends Driver>) classLoader.loadClass(conf.get(DBConfiguration.DRIVER_CLASS_PROPERTY));
             driver = driverClass.newInstance();
           }
-
-        driver = Class.forName(conf.get(DBConfiguration.DRIVER_CLASS_PROPERTY)).newInstance();
-        DriverManager.registerDriver((Driver) driver);
-        LOG.debug("Registered JDBC driver via shim {}. Actual Driver {}.", driver);
+          driverShim = new JDBCDriverShim(driver);
+          DriverManager.registerDriver(driverShim);
+          LOG.debug("Registered JDBC driver via shim {}. Actual Driver {}.", driver);
+        }
       }
 
       if (conf.get(DBConfiguration.USERNAME_PROPERTY) == null) {

@@ -24,6 +24,7 @@ import co.cask.cdap.api.data.batch.OutputFormatProvider;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.api.dataset.lib.KeyValue;
+import co.cask.cdap.api.plugin.PluginProperties;
 import co.cask.cdap.etl.api.Emitter;
 import co.cask.cdap.etl.api.PipelineConfigurer;
 import co.cask.cdap.etl.api.batch.BatchRuntimeContext;
@@ -35,6 +36,7 @@ import com.google.common.base.Strings;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapred.lib.db.DBConfiguration;
 
+import java.sql.Driver;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -45,8 +47,6 @@ import java.util.Map;
 @Name("CDCDatabaseSink")
 @Description("Writes to database table using jdbc.")
 public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseRecord, NullWritable> {
-  static final String JDBC_DRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver";
-
   private final DatabaseSinkConfig config;
 
   public DatabaseSink(DatabaseSinkConfig config) {
@@ -62,7 +62,26 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
 
     // Checks if that we are writing with has been constructed correctly.
     Schema writeSchema = config.getSchema();
+    validateJDBCPluginPipeline(pipelineConfigurer, getJDBCPluginId());
     pipelineConfigurer.getStageConfigurer().setOutputSchema(writeSchema);
+  }
+
+  public void validateJDBCPluginPipeline(PipelineConfigurer pipelineConfigurer, String jdbcPluginId) {
+    Preconditions.checkArgument(!(config.user == null && config.password != null),
+                                "user is null. Please provide both user name and password if database requires " +
+                                  "authentication. If not, please remove password and retry.");
+    Class<? extends Driver> jdbcDriverClass = pipelineConfigurer.usePluginClass(config.jdbcPluginType,
+                                                                                config.jdbcPluginName,
+                                                                                jdbcPluginId,
+                                                                                PluginProperties.builder().build());
+    Preconditions.checkArgument(
+      jdbcDriverClass != null, "Unable to load JDBC Driver class for plugin name '%s'. Please make sure that the " +
+        "plugin '%s' of type '%s' containing the driver has been installed correctly.", config.jdbcPluginName,
+      config.jdbcPluginName, config.jdbcPluginType);
+  }
+
+  private String getJDBCPluginId() {
+    return String.format("%s.%s.%s", "sink", config.jdbcPluginType, config.jdbcPluginName);
   }
 
   @Override
@@ -80,7 +99,8 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
 
   @Override
   public void prepareRun(BatchSinkContext context) throws Exception {
-    context.addOutput(Output.of(config.referenceName, new DBOutputFormatProvider(config)));
+    Class<? extends Driver> driverClass = context.loadPluginClass(getJDBCPluginId());
+    context.addOutput(Output.of(config.referenceName, new DBOutputFormatProvider(config, driverClass)));
   }
 
 
@@ -91,10 +111,10 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
   private static class DBOutputFormatProvider implements OutputFormatProvider {
     private final Map<String, String> conf;
 
-    DBOutputFormatProvider(DatabaseSinkConfig dbSinkConfig) {
+    DBOutputFormatProvider(DatabaseSinkConfig dbSinkConfig, Class<? extends Driver> driverClass) {
       this.conf = new HashMap<>();
 
-      conf.put(DBConfiguration.DRIVER_CLASS_PROPERTY, JDBC_DRIVER);
+      conf.put(DBConfiguration.DRIVER_CLASS_PROPERTY, driverClass.getName());
       conf.put(DBConfiguration.URL_PROPERTY, dbSinkConfig.connectionString);
       if (dbSinkConfig.user != null) {
         conf.put(DBConfiguration.USERNAME_PROPERTY, dbSinkConfig.user);

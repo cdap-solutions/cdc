@@ -33,6 +33,8 @@ public class DatabaseSinkConfig extends ReferencePluginConfig {
   public static final String QUERY = "query";
   public static final String USER = "user";
   public static final String PASSWORD = "password";
+  public static final String JDBC_PLUGIN_NAME = "jdbcPluginName";
+  public static final String JDBC_PLUGIN_TYPE = "jdbcPluginType";
   public static final String SCHEMA = "outputschema";
 
   public DatabaseSinkConfig(String referenceName) {
@@ -57,6 +59,17 @@ public class DatabaseSinkConfig extends ReferencePluginConfig {
   @Nullable
   @Macro
   public String password;
+
+  @Name(JDBC_PLUGIN_NAME)
+  @Description("Name of the JDBC plugin to use. This is the value of the 'name' key defined in the JSON file " +
+    "for the JDBC plugin.")
+  public String jdbcPluginName;
+
+  @Name(JDBC_PLUGIN_TYPE)
+  @Description("Type of the JDBC plugin to use. This is the value of the 'type' key defined in the JSON file " +
+    "for the JDBC plugin. Defaults to 'jdbc'.")
+  @Nullable
+  public String jdbcPluginType;
 
   @Name(SCHEMA)
   @Description("Output schema for the table.")

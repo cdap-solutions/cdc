@@ -100,16 +100,10 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>com.microsoft.sqlserver</groupId>
-      <artifactId>sqljdbc4</artifactId>
-      <version>4.0</version>
-    </dependency>
-    <dependency>
       <groupId>org.apache.avro</groupId>
       <artifactId>avro</artifactId>
       <version>1.8.1</version>
     </dependency>
-
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-common</artifactId>
@@ -324,7 +318,6 @@
           <instructions>
             <_exportcontents>
               co.cask.*;
-              com.microsoft.sqlserver.jdbc.*;
               org.apache.avro.*
             </_exportcontents>
             <Embed-Dependency>*;inline=false;scope=compile</Embed-Dependency>

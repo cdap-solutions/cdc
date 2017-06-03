@@ -28,6 +28,16 @@
       "properties": [
         {
           "widget-type": "textbox",
+          "label": "Plugin Name",
+          "name": "jdbcPluginName"
+        },
+        {
+          "widget-type": "textbox",
+          "label": "Plugin Type",
+          "name": "jdbcPluginType"
+        },
+        {
+          "widget-type": "textbox",
           "label": "Connection String",
           "name": "connectionString"
         }
