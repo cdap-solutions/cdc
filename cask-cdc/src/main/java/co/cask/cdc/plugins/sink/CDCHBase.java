@@ -52,6 +52,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -170,9 +171,11 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
   }
 
   private byte[] getRowKey(List<String> primaryKeys, StructuredRecord change) {
-    // TODO make sure the primary keys are always in same order
+    // the primary keys are always in sorted order
     List<String> primaryValues = new ArrayList<>();
-    for(String primaryKey : primaryKeys) {
+    String [] primaryKeysArray = (String []) primaryKeys.toArray();
+    Arrays.sort(primaryKeysArray);
+    for(String primaryKey : primaryKeysArray) {
       primaryValues.add(change.get(primaryKey).toString());
     }
     String joinedValue = Joiner.on(":").join(primaryValues);
