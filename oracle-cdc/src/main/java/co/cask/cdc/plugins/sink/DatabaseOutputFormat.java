@@ -119,7 +119,6 @@ public class DatabaseOutputFormat extends DBOutputFormat<DatabaseRecord,NullWrit
         if (!tableExists(connection, tableName)) {
           // Create table if it does not exist
           createTable(tableName, primaryKeys, change, fields);
-          return;
         }
 
         switch (operationType) {
