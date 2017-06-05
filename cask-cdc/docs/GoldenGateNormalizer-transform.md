@@ -1,4 +1,4 @@
-CDC HBase Sink
+Golden Gate Normalizer
 ==========
 
 Converts a Golden Gate message into a StructuredRecord. `StructuredRecord` is the Java class that all built-in plugins work with.
@@ -6,7 +6,7 @@ Converts a Golden Gate message into a StructuredRecord. `StructuredRecord` is th
 Usage Notes
 -----------
 
-This plugin is used whenever you need to use the outputs of a Golden Gate source. It can wrap standarized DDL and DML records in a `StructuredRecord` that can be processed by other plugins. 
+This plugin is used whenever you need to use the outputs of a Golden Gate source. It can wrap standarized DDL and DML records in a `StructuredRecord`. 
 
 Plugin Configuration
 ---------------------

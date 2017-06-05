@@ -6,7 +6,7 @@ CDAP Plugin for Change Data Capture (CDC) in HBase using the Spark Framework. Pl
 Usage Notes
 -----------
 
-This plugin supports table creation and table modification on an HBase server. It takes a standard Data Definition Language (DDL)  record or a Data Manipulation Language (DML) record and updates the HBase accordingly. We recommend placing a normalizer plugin before this plugin.
+This plugin supports table creation and table modification on an HBase server. It takes a standard DDL record or a DML record and updates HBase accordingly. We recommend placing a normalizer plugin before this plugin.
 
 Table Creation
 --------------
@@ -92,17 +92,8 @@ The content of the changes is listed in the `change` field. The `primary_keys` f
 Plugin Configuration
 ---------------------
 
-The following configurations collectively specify the address of the target HBase server.
+This plugin configures itself from the HBase settings on the cluster. Make sure the `hbase-site.xml` file has the correct configuration needed to connect to the HBase server.
 
-| Config | Required | Default | Description |
-| :------------ | :------: | :----- | :---------- |
-| **Reference Name** | **Yes** | N/A | Name of the plugin instance.| 
-| **zookeeperClientPort** | **No** | `2181` | Specifies the port which the HBase server runs on. |
-| **zookeeperParent** | **No** | `/hbase` | Specifies the HBase parent node. |
-| **zookeeperQuorum** | **No** | `localhost` | The web/IP address of the HBase server. |
-
-Note that your HBase server does not necessarily run on the address specified by the default configurations. Check before you use this plugin.
- 
 Build
 -----
 To build this plugin:
