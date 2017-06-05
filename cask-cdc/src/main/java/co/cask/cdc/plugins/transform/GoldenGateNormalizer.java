@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Normalizer plugin to process the events from the Golden Gate Kafka topic.
@@ -54,12 +55,6 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
                                                            Schema.Field.of("schema", Schema.of(Schema.Type.STRING)));
 
   private static final String INPUT_FIELD = "message";
-  // private final GoldenGateNormalizerConfig config;
-
-  /*
-  public GoldenGateNormalizer(GoldenGateNormalizerConfig config) {
-    this.config = config;
-  }*/
 
   @Override
   public void transform(StructuredRecord input, Emitter<StructuredRecord> emitter) throws Exception {
@@ -100,39 +95,20 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
       ? Bytes.toBytes((ByteBuffer) genericRecord.get("payload"))
       : (byte[]) genericRecord.get("payload");
 
-    LOG.info("Got tableName {} and fingerPrint {} in wrapped schema.", tableName, schameHashId);
     org.apache.avro.Schema avroSchema = new org.apache.avro.Schema.Parser().parse(schemaCacheMap.get(schameHashId));
-    LOG.info("Got avro schema {}", avroSchema);
+    LOG.debug("Avro schema {} for table {} with fingerprint {}", avroSchema, tableName, schameHashId);
 
     StructuredRecord structuredRecord = AvroConverter.fromAvroRecord(getRecord(payload, avroSchema),
                                                                      AvroConverter.fromAvroSchema(avroSchema));
 
-    LOG.info("Emitting Structured Record {}", StructuredRecordStringConverter.toJsonString(structuredRecord));
-    emitter.emit(getNormalizedDMLRecord(structuredRecord));
-  }
-
-  /*
-  public static class GoldenGateNormalizerConfig extends PluginConfig {
-    @Name("includeNamespaceInTableName")
-    @Description("Option to specify whether to include namespace name in the table. For example, if set to 'true' " +
-      "and namespace for the source table 'EMPLOYEE' is 'HR', then the output table name would be 'EMPLOYEE_HR'.")
-    private Boolean includeNamespaceInTableName;
-
-    public GoldenGateNormalizerConfig(boolean includeNamespaceInTableName) {
-      this.includeNamespaceInTableName = includeNamespaceInTableName;
-    }
-
-    public boolean includeNamespaceName() {
-      if (includeNamespaceInTableName == null) {
-        return false;
-      }
-      return includeNamespaceInTableName;
+    List<StructuredRecord> toEmit = getNormalizedDMLRecord(structuredRecord);
+    for (StructuredRecord record : toEmit) {
+      LOG.info("Emitting Structured Record {}", StructuredRecordStringConverter.toJsonString(record));
+      emitter.emit(record);
     }
   }
-  */
 
   private GenericRecord getRecord(byte[] message, org.apache.avro.Schema schema) throws IOException {
-    LOG.info("Schema while getting record {}", schema);
     GenericDatumReader<GenericRecord> datumReader = new GenericDatumReader<>(schema);
     return datumReader.read(null, DecoderFactory.get().binaryDecoder(message, null));
   }
@@ -149,11 +125,13 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
       }
     }
 
-    LOG.info("Schema for DDL {}", Schema.recordOf("columns", columnFields).toString());
+    LOG.debug("Schema for DDL {}", Schema.recordOf("columns", columnFields).toString());
     return Schema.recordOf("columns", columnFields).toString();
   }
 
-  private StructuredRecord getNormalizedDMLRecord(StructuredRecord record) {
+  private List<StructuredRecord> getNormalizedDMLRecord(StructuredRecord record) throws IOException {
+    LOG.info("XXX Record before normalizing is {}", StructuredRecordStringConverter.toJsonString(record));
+    List<StructuredRecord> normalizedRecords = new ArrayList<>();
     // This table name contains "." in it already
     String tableName = record.get("table");
     List<String> primaryKeys = record.get("primary_keys");
@@ -169,35 +147,63 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
         }
         break;
       case "U":
-        StructuredRecord updateRecord = record.get("after");
+        StructuredRecord afterUpdateRecord = record.get("after");
         StructuredRecord beforeUpdateRecord = record.get("before");
-        for (co.cask.cdap.api.data.schema.Schema.Field field : updateRecord.getSchema().getFields()) {
+        boolean pkChanged = primaryKeyChanged(primaryKeys, beforeUpdateRecord, afterUpdateRecord);
+
+        if (pkChanged) {
+          // We need to emit two records
+          // One for DELETE and one for INSERT
+          suppliedFieldValues = addDeleteFields(record);
+          normalizedRecords.add(createDMLRecord(tableName, "D", primaryKeys, suppliedFieldValues));
+        }
+
+        suppliedFieldValues.clear();
+        for (co.cask.cdap.api.data.schema.Schema.Field field : afterUpdateRecord.getSchema().getFields()) {
           if (!field.getName().endsWith("_isMissing")) {
             String fieldName = field.getName();
-            if (updateRecord.get(fieldName + "_isMissing") != true) {
-              suppliedFieldValues.put(field, updateRecord.get(field.getName()));
+            if (afterUpdateRecord.get(fieldName + "_isMissing") != true) {
+              LOG.info("XXX Adding after field {}, {}", field.getName(), afterUpdateRecord.get(field.getName()));
+              suppliedFieldValues.put(field, afterUpdateRecord.get(field.getName()));
             } else {
               // Field is not updated, use the field value from the before record
+              LOG.info("XXX Adding before field {}, {}", field.getName(), beforeUpdateRecord.get(field.getName()));
               suppliedFieldValues.put(field, beforeUpdateRecord.get(field.getName()));
             }
           }
         }
+        if (pkChanged) {
+          // Change the operation type to Insert if the primary key is changed
+          opType = "I";
+        }
         break;
       case "D":
-        StructuredRecord deleteRecord = record.get("before");
-        for (co.cask.cdap.api.data.schema.Schema.Field field : deleteRecord.getSchema().getFields()) {
-          if (!field.getName().endsWith("_isMissing")) {
-            suppliedFieldValues.put(field, deleteRecord.get(field.getName()));
-          }
-        }
+        suppliedFieldValues = addDeleteFields(record);
         break;
       default:
         break;
     }
 
-    Schema changeSchema = Schema.recordOf("change", suppliedFieldValues.keySet());
+    normalizedRecords.add(createDMLRecord(tableName, opType, primaryKeys, suppliedFieldValues));
+    return normalizedRecords;
+  }
+
+  private Map<Schema.Field, Object> addDeleteFields(StructuredRecord record) {
+    Map<Schema.Field, Object> fieldValues = new HashMap<>();
+    StructuredRecord deleteRecord = record.get("before");
+    for (co.cask.cdap.api.data.schema.Schema.Field field : deleteRecord.getSchema().getFields()) {
+      if (!field.getName().endsWith("_isMissing")) {
+        fieldValues.put(field, deleteRecord.get(field.getName()));
+      }
+    }
+    return fieldValues;
+  }
+
+  private StructuredRecord createDMLRecord(String tableName, String opType, List<String> primaryKeys,
+                                           Map<Schema.Field, Object> changedFields) {
+    Schema changeSchema = Schema.recordOf("change", changedFields.keySet());
     StructuredRecord.Builder changeBuilder = StructuredRecord.builder(changeSchema);
-    for(Map.Entry<Schema.Field, Object> entry : suppliedFieldValues.entrySet()) {
+    for(Map.Entry<Schema.Field, Object> entry : changedFields.entrySet()) {
       changeBuilder.set(entry.getKey().getName(), entry.getValue());
     }
 
@@ -212,6 +218,15 @@ public class GoldenGateNormalizer extends Transform<StructuredRecord, Structured
     builder.set("primary_keys", primaryKeys);
     builder.set("change", changeBuilder.build());
     return builder.build();
+  }
+
+  private boolean primaryKeyChanged(List<String> primaryKeys, StructuredRecord before, StructuredRecord after) {
+    for (String key : primaryKeys) {
+      if (!Objects.equals(before.get(key), after.get(key))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private org.apache.avro.Schema getGenericWrapperMessageSchema() {

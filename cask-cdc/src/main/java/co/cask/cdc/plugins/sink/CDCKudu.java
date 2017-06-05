@@ -25,7 +25,6 @@ import co.cask.cdap.etl.api.batch.SparkPluginContext;
 import co.cask.cdap.etl.api.batch.SparkSink;
 import co.cask.cdap.format.StructuredRecordStringConverter;
 import com.google.common.collect.Sets;
-import com.google.gson.Gson;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.AlterTableOptions;
@@ -46,31 +45,27 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import javax.annotation.Nullable;
 
 /**
  * Spark compute plugin
  */
 @Plugin(type = SparkSink.PLUGIN_TYPE)
-@Name("Kudu")
-public class Kudu extends SparkSink<StructuredRecord> {
-  private static final Logger LOG = LoggerFactory.getLogger(Kudu.class);
-  private static Gson GSON = new Gson();
-  private final KuduConfig kuduConfig;
-  private final Map<String, Schema> schemaMapping = new HashMap<>();
+@Name("CDCKudu")
+public class CDCKudu extends SparkSink<StructuredRecord> {
+  private static final Logger LOG = LoggerFactory.getLogger(CDCKudu.class);
+  private final CDCKuduConfig CDCKuduConfig;
   private final Set<String> existingTables = new HashSet<>();
 
-  public Kudu(KuduConfig config) {
-    this.kuduConfig = config;
+  public CDCKudu(CDCKuduConfig config) {
+    this.CDCKuduConfig = config;
   }
 
   private boolean updateKuduTableSchema(KuduClient client, StructuredRecord input) throws Exception {
-    LOG.info("Updating Kudu Table Schema for {}", GSON.toJson(input));
     String namespacedTableName = input.get("table");
     String tableName = namespacedTableName.split("\\.")[1];
     Schema newSchema = Schema.parseJson((String) input.get("schema"));
@@ -78,7 +73,6 @@ public class Kudu extends SparkSink<StructuredRecord> {
       // Table does not exists in the Kudu yet.
       // Creation of table will be attempted when we first see the DML Record.
       // Since at that point we know the primary keys to used.
-      schemaMapping.put(tableName, newSchema);
       return false;
     }
 
@@ -88,17 +82,13 @@ public class Kudu extends SparkSink<StructuredRecord> {
     for (ColumnSchema schema : kuduTableSchema.getColumns()) {
       oldColumns.add(schema.getName());
     }
-    LOG.info("OldColumns {}", oldColumns);
 
     Set<String> newColumns = new HashSet<>();
     for (Schema.Field field : newSchema.getFields()) {
       newColumns.add(field.getName());
     }
 
-    LOG.info("NewColumns {}", newColumns);
-
     Sets.SetView<String> columnDiff = Sets.symmetricDifference(newColumns, oldColumns);
-    LOG.info("Column Diff {}", columnDiff);
     Set<String> columnsToDelete = new HashSet<>();
     Set<String> columnsToAdd = new HashSet<>();
     for (String column : columnDiff) {
@@ -111,31 +101,27 @@ public class Kudu extends SparkSink<StructuredRecord> {
       }
     }
 
-    LOG.info("Columns to add {} and Columns to delete {}", columnsToAdd, columnsToDelete);
-
     AlterTableOptions alterTableOptions = new AlterTableOptions();
     for (String column : columnsToDelete) {
       alterTableOptions.dropColumn(column);
-      LOG.info("Deleting column {}", column);
+      LOG.info("Column {} will be dropped.", column);
     }
 
     for (String column : columnsToAdd) {
       Schema.Field newField = newSchema.getField(column);
       Type kuduType = toKuduType(column, newField.getSchema());
       alterTableOptions.addNullableColumn(column, kuduType);
-      LOG.info("Adding column {} of type {} to the KuduTable.", column, kuduType);
+      LOG.info("Column {} of type {} will be added to the Kudu table {}.", column, kuduType, table.getName());
     }
 
     if (!(columnsToAdd.isEmpty() && columnsToDelete.isEmpty())) {
-      LOG.info("Altering table {}, {}",table.getName(), alterTableOptions);
+      LOG.debug("Altering table {}, {}", table.getName(), alterTableOptions);
       client.alterTable(table.getName(), alterTableOptions);
       client.isAlterTableDone(table.getName());
-      LOG.info("Alter table done!");
       table = client.openTable(table.getName());
-      LOG.info("Columns after alter table {}", table.getSchema().getColumns());
+      LOG.debug("Columns after alter table {}", table.getSchema().getColumns());
     }
 
-    LOG.info("Returning!");
     return true;
   }
 
@@ -147,47 +133,34 @@ public class Kudu extends SparkSink<StructuredRecord> {
     String tableName = getTableName((String) input.get("table"));
     String operationType = input.get("op_type");
     List<String> primaryKeys = input.get("primary_keys");
+    StructuredRecord change = input.get("change");
+    List<Schema.Field> fields = change.getSchema().getFields();
     if (!existingTables.contains(tableName) && !client.tableExists(tableName)) {
-      // TODO it is assumed that create table and operation on the table happens in the same batch
-      // Most likely it will be case but they can come in separate batch
-      createKuduTable(client, tableName, schemaMapping.get(tableName), primaryKeys);
+      createKuduTable(client, tableName, fields, primaryKeys);
       existingTables.add(tableName);
     }
 
     KuduTable table = client.openTable(tableName);
-    StructuredRecord change = input.get("change");
-    List<Schema.Field> fields = change.getSchema().getFields();
     switch (operationType) {
       case "I":
         Insert insert = table.newInsert();
         for (Schema.Field field : fields) {
-          // Normalizer always passes the full schema, however it is possible that only few fields are provided
-          // Check if the field is actually provided
-          if (change.get(field.getName()) != null) {
-            addColumnDataBasedOnType(insert.getRow(), field, change.get(field.getName()));
-          }
+          addColumnDataBasedOnType(insert.getRow(), field, change.get(field.getName()));
         }
         session.apply(insert);
         break;
       case "U":
         Update update = table.newUpdate();
         for (Schema.Field field : fields) {
-          // Normalizer always passes the full schema, however it is possible that only few fields are provided
-          // Check if the field is actually provided
-          if (change.get(field.getName()) != null) {
-            addColumnDataBasedOnType(update.getRow(), field, change.get(field.getName()));
-          }
+          addColumnDataBasedOnType(update.getRow(), field, change.get(field.getName()));
         }
         session.apply(update);
         break;
       case "D":
-        // TODO DELETE operation requires primary keys always
         Delete delete = table.newDelete();
         for (String keyColumn : primaryKeys) {
           for (Schema.Field field : fields) {
-            // Normalizer always passes the full schema, however it is possible that only few fields are provided
-            // Check if the field is actually provided
-            if (field.getName().equals(keyColumn) && change.get(field.getName()) != null) {
+            if (field.getName().equals(keyColumn)) {
               addColumnDataBasedOnType(delete.getRow(), field, change.get(field.getName()));
               break;
             }
@@ -201,9 +174,13 @@ public class Kudu extends SparkSink<StructuredRecord> {
   }
 
   private void addColumnDataBasedOnType(PartialRow row, co.cask.cdap.api.data.schema.Schema.Field field,
-                                        Object value) throws TypeConversionException {
+                                        @Nullable Object value) throws TypeConversionException {
     String columnName = field.getName();
     Type type = toKuduType(field.getName(), field.getSchema());
+    if (value == null) {
+      row.setNull(columnName);
+      return;
+    }
     switch (type) {
       case STRING:
         row.addString(columnName, (String) value);
@@ -235,18 +212,18 @@ public class Kudu extends SparkSink<StructuredRecord> {
     }
   }
 
-  private void createKuduTable(KuduClient client, String tableName, co.cask.cdap.api.data.schema.Schema writeSchema,
+  private void createKuduTable(KuduClient client, String tableName, List<Schema.Field> fields,
                                List<String> primaryKeys) throws Exception {
     // Check if the table exists, if table does not exist, then create one
     // with schema defined in the write schema.
     try {
       if (!client.tableExists(tableName)) {
         // Convert the writeSchema into Kudu schema.
-        List<ColumnSchema> columnSchemas = toKuduSchema(writeSchema.getFields(), new HashSet<>(primaryKeys),
-                                                        kuduConfig.getCompression(), kuduConfig.getEncoding());
+        List<ColumnSchema> columnSchemas = toKuduSchema(fields, new HashSet<>(primaryKeys),
+                                                        CDCKuduConfig.getCompression(), CDCKuduConfig.getEncoding());
         org.apache.kudu.Schema kuduSchema = new org.apache.kudu.Schema(getOrderedSchemaColumns(primaryKeys, columnSchemas));
         CreateTableOptions options = new CreateTableOptions();
-        options.addHashPartitions(primaryKeys, kuduConfig.getBuckets(), kuduConfig.getSeed());
+        options.addHashPartitions(primaryKeys, CDCKuduConfig.getBuckets(), CDCKuduConfig.getSeed());
 
         try {
           KuduTable table = client.createTable(tableName, kuduSchema, options);
@@ -365,11 +342,11 @@ public class Kudu extends SparkSink<StructuredRecord> {
     javaRDD.foreachPartition(new VoidFunction<Iterator<StructuredRecord>>() {
       @Override
       public void call(Iterator<StructuredRecord> structuredRecordIterator) throws Exception {
-        try (KuduClient client = new KuduClient.KuduClientBuilder(kuduConfig.getMasterAddress())
-          .defaultOperationTimeoutMs(kuduConfig.getOperationTimeout())
-          .defaultAdminOperationTimeoutMs(kuduConfig.getAdministrationTimeout())
+        try (KuduClient client = new KuduClient.KuduClientBuilder(CDCKuduConfig.getMasterAddress())
+          .defaultOperationTimeoutMs(CDCKuduConfig.getOperationTimeout())
+          .defaultAdminOperationTimeoutMs(CDCKuduConfig.getAdministrationTimeout())
           .disableStatistics()
-          .bossCount(kuduConfig.getThreads())
+          .bossCount(CDCKuduConfig.getThreads())
           .build()) {
 
           KuduSession session = client.newSession();
@@ -379,8 +356,7 @@ public class Kudu extends SparkSink<StructuredRecord> {
 
           while (structuredRecordIterator.hasNext()) {
             StructuredRecord input = structuredRecordIterator.next();
-            LOG.info("Received StructuredRecord in Kudu {}", GSON.toJson(input));
-            LOG.info("StructuredRecord to StringConverter Kudu {}", StructuredRecordStringConverter.toJsonString(input));
+            LOG.debug("Received StructuredRecord in Kudu {}", StructuredRecordStringConverter.toJsonString(input));
             if (input.getSchema().getRecordName().equals("DDLRecord")) {
               if (updateKuduTableSchema(client, input)) {
                 // Schema for the table is updated. Flush the session now

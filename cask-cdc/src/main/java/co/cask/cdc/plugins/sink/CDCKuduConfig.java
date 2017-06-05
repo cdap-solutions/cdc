@@ -27,7 +27,7 @@ import javax.annotation.Nullable;
 /**
  * Configurations for the Kudu.
  */
-public class KuduConfig extends ReferencePluginConfig {
+public class CDCKuduConfig extends ReferencePluginConfig {
 
   // Required Fields.
 
@@ -37,7 +37,6 @@ public class KuduConfig extends ReferencePluginConfig {
   public String optMasterAddresses;
 
   // Options Fields
-
   @Name("opt-timeout")
   @Description("Timeout for Kudu operations in milliseconds. Defaults is  '30000 ms'.")
   @Nullable
@@ -83,11 +82,11 @@ public class KuduConfig extends ReferencePluginConfig {
   @Nullable
   private String optBossThreads;
 
-  public KuduConfig(ColumnSchema.CompressionAlgorithm compression) {
+  public CDCKuduConfig(ColumnSchema.CompressionAlgorithm compression) {
     this("kudu");
   }
 
-  public KuduConfig(String referenceName) {
+  public CDCKuduConfig(String referenceName) {
     super(referenceName);
   }
 

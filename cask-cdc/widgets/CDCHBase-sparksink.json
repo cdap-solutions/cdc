@@ -13,35 +13,6 @@
           "description" : "Reference specifies the name to be used to track this external source"
         }
       ]
-    },
-    {
-      "label": "HBase Advanced Options",
-      "properties" : [
-        {
-          "widget-type": "textbox",
-          "label": "Zookeeper Quorum (DEFAULT: localhost)",
-          "name": "zkQuorum",
-          "widget-attributes" : {
-            "default" : "localhost"
-          }
-        },
-        {
-          "widget-type": "number",
-          "label": "Zookeeper Client Port (DEFAULT: 2181)",
-          "name": "zkClientPort",
-          "widget-attributes" : {
-            "default" : "2181"
-          }
-        },
-        {
-          "widget-type": "textbox",
-          "label": "Parent Node of HBase in Zookeeper. (DEFAULT: /hbase)",
-          "name": "zkNodeParent",
-          "widget-attributes" : {
-            "default": "/hbase"
-          }
-        }
-      ]
     }
   ]
 }
