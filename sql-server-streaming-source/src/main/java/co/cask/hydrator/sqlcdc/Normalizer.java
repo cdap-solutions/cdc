@@ -85,7 +85,7 @@ public class Normalizer extends Transform<StructuredRecord, StructuredRecord> {
     StructuredRecord change = input.get("change");
     Schema changeSchema = change.getSchema();
     for (Schema.Field field : changeSchema.getFields()) {
-      if (DDL_SYSTEM_FIELD.contains(field.getName().toLowerCase())) {
+      if (DDL_SYSTEM_FIELD.contains(field.getName().toUpperCase())) {
         continue;
       }
       ddlFields.add(field);

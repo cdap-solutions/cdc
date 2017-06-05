@@ -61,7 +61,7 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
 //      int sqlColumnType = metadata.getColumnType(i);
 //      changeRecordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
 //    }
-    for (int i = 0; i < changeSchema.getFields().size() - 1; i++) {
+    for (int i = 0; i < changeSchema.getFields().size(); i++) {
       Schema.Field field = changeSchema.getFields().get(i);
       int sqlColumnType = metadata.getColumnType(i + 1);
       changeRecordBuilder.set(field.getName(), transformValue(sqlColumnType, resultSet, field.getName()));
@@ -71,15 +71,19 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     return recordBuilder.build();
   }
 
-  private static List<Schema.Field> getNullableSchema(List<Schema.Field> fields) throws SQLException {
-    List<Schema.Field> schemaFields = Lists.newArrayList();
-    for (Schema.Field field : fields) {
-      String name = field.getName();
-      Schema schema = Schema.nullableOf(field.getSchema());
-      schemaFields.add(Schema.Field.of(name, schema));
+  private void printResultSet(ResultSet resultSet) throws SQLException {
+    ResultSetMetaData rsmd = resultSet.getMetaData();
+    int columnsNumber = rsmd.getColumnCount();
+    while (resultSet.next()) {
+      for (int i = 1; i <= columnsNumber; i++) {
+        if (i > 1) System.out.print(",  ");
+        String columnValue = resultSet.getString(i);
+        System.out.print(rsmd.getColumnName(i) + " " + columnValue);
+      }
+      System.out.println("");
     }
-    return schemaFields;
   }
+
 
 
   //TODO: This function is taken from DatabaseSource. We should move it to the DBUtil class in Datasbase plugin and
