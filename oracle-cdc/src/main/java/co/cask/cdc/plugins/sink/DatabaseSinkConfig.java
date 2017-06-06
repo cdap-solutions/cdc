@@ -19,10 +19,8 @@ package co.cask.cdc.plugins.sink;
 import co.cask.cdap.api.annotation.Description;
 import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
-import co.cask.cdap.api.data.schema.Schema;
 import co.cask.hydrator.common.ReferencePluginConfig;
 
-import java.io.IOException;
 import javax.annotation.Nullable;
 
 /**
@@ -30,12 +28,10 @@ import javax.annotation.Nullable;
  */
 public class DatabaseSinkConfig extends ReferencePluginConfig {
   public static final String CONNECTION_STRING = "connectionString";
-  public static final String QUERY = "query";
   public static final String USER = "user";
   public static final String PASSWORD = "password";
   public static final String JDBC_PLUGIN_NAME = "jdbcPluginName";
   public static final String JDBC_PLUGIN_TYPE = "jdbcPluginType";
-  public static final String SCHEMA = "outputschema";
 
   public DatabaseSinkConfig(String referenceName) {
     super(referenceName);
@@ -70,17 +66,4 @@ public class DatabaseSinkConfig extends ReferencePluginConfig {
     "for the JDBC plugin. Defaults to 'jdbc'.")
   @Nullable
   public String jdbcPluginType;
-
-  @Name(SCHEMA)
-  @Description("Output schema for the table.")
-  @Macro
-  public String outputschema;
-
-  public Schema getSchema() {
-    try {
-      return Schema.parseJson(outputschema);
-    } catch (IOException e) {
-      throw new IllegalArgumentException("Unable to parse output schema.");
-    }
-  }
 }

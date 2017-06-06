@@ -49,22 +49,5 @@
       "ref-property-name": "tableName"
     }]
   },
-  "outputs": [
-    {
-      "name": "outputschema",
-      "widget-type": "schema",
-      "widget-attributes": {
-        "schema-types": [
-          "boolean",
-          "int",
-          "long",
-          "float",
-          "double",
-          "bytes",
-          "string"
-        ],
-        "schema-default-type": "string"
-      }
-    }
-  ]
+  "outputs": []
 }

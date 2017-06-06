@@ -29,10 +29,6 @@ defined in the JSON file for the JDBC plugin. Defaults to 'jdbc'.
 
 **connectionString:** JDBC connection string including database name. (Macro-enabled)
 
-**outputschema:** The schema of records output by the source. This will be used in place of whatever schema comes 
-back from the query. However, it must match the schema that comes back from the query, 
-except it can mark fields as nullable and can contain a subset of the fields. 
-
 Example
 -------
 This example connects to a database using the specified 'connectionString', which means
@@ -46,9 +42,6 @@ Each input record will be written to corresponding database tables.
             "referenceName": "CDCDatabaseSink",
             "connectionString": "jdbc:sqlserver://<ip>:<port>;databaseName=demo;user=user;password=password;",
             "jdbcPluginName": "sqlserver",
-            "jdbcPluginType": "jdbc",
-            "outputschema": "{\"type\":\"record\",\"name\":\"etlSchemaBody\",\"fields\":[{\"name\":\"EMPNO\",\"type\":\"long\"},{\"name\":\"ENAME\",\"type\":\"string\"},
-            {\"name\":\"JOB\",\"type\":\"string\"},{\"name\":\"MGR\",\"type\":\"long\"},{\"name\":\"HIREDATE\",\"type\":\"string\"},{\"name\":\"SAL\",\"type\":\"long\"},
-            {\"name\":\"COMM\",\"type\":\"long\"},{\"name\":\"DEPTNO\",\"type\":\"long\"}]}",
+            "jdbcPluginType": "jdbc"
         }
     }

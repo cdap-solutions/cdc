@@ -22,7 +22,6 @@ import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.data.batch.Output;
 import co.cask.cdap.api.data.batch.OutputFormatProvider;
 import co.cask.cdap.api.data.format.StructuredRecord;
-import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.api.dataset.lib.KeyValue;
 import co.cask.cdap.api.plugin.PluginProperties;
 import co.cask.cdap.etl.api.Emitter;
@@ -32,7 +31,6 @@ import co.cask.cdap.etl.api.batch.BatchSink;
 import co.cask.cdap.etl.api.batch.BatchSinkContext;
 import co.cask.hydrator.common.ReferenceBatchSink;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Strings;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapred.lib.db.DBConfiguration;
 
@@ -57,13 +55,8 @@ public class DatabaseSink extends ReferenceBatchSink<StructuredRecord, DatabaseR
   @Override
   public void configurePipeline(PipelineConfigurer pipelineConfigurer) {
     super.configurePipeline(pipelineConfigurer);
-    Preconditions.checkArgument(!Strings.isNullOrEmpty(config.outputschema), "Output schema is not " +
-      "specified. Please add the output schema.");
-
-    // Checks if that we are writing with has been constructed correctly.
-    Schema writeSchema = config.getSchema();
     validateJDBCPluginPipeline(pipelineConfigurer, getJDBCPluginId());
-    pipelineConfigurer.getStageConfigurer().setOutputSchema(writeSchema);
+    pipelineConfigurer.getStageConfigurer().setOutputSchema(null);
   }
 
   public void validateJDBCPluginPipeline(PipelineConfigurer pipelineConfigurer, String jdbcPluginId) {
