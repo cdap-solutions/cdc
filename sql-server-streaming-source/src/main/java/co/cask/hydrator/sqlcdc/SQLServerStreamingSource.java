@@ -65,17 +65,17 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
 
     ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
 
-    List<TableInformation> ctEnabledTables = getCTEnabledTables(connection);
+//    List<TableInformation> ctEnabledTables = getCTEnabledTables(connection);
 
     JavaDStream<StructuredRecord> ddlJavaDStream =
       JavaDStream.fromDStream(new DDLInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
                                                   getConnectionString(), conf.username, conf
-                                                    .password, ctEnabledTables), tag);
+                                                    .password), tag);
 
     JavaDStream<StructuredRecord> dmlJavaDStream =
       JavaDStream.fromDStream(new DMLInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
                                                   getConnectionString(), conf.username, conf
-                                                    .password, ctEnabledTables), tag);
+                                                    .password), tag);
 
     List<JavaDStream<StructuredRecord>> records = new ArrayList<>();
     records.add(dmlJavaDStream);
@@ -100,46 +100,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
                          conf.dbName);
   }
 
-  private List<Schema.Field> getColumnns(Connection connection, String schema, String table) throws SQLException {
-    String query = String.format("SELECT * from [%s].[%s]", schema, table);
-    Statement statement = connection.createStatement();
-    statement.setMaxRows(1);
-    ResultSet resultSet = statement.executeQuery(query);
-    return DBUtils.getSchemaFields(resultSet);
-  }
 
-  private Set<String> getKeyColumns(Connection connection, String schema, String table) throws SQLException {
-    String stmt =
-      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE " +
-        "OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA+'.'+CONSTRAINT_NAME), 'IsPrimaryKey') = 1 AND " +
-        "TABLE_SCHEMA = ? AND TABLE_NAME = ?";
-    Set<String> keyColumns = new LinkedHashSet<>();
-    try (PreparedStatement primaryKeyStatement = connection.prepareStatement(stmt)) {
-      primaryKeyStatement.setString(1, schema);
-      primaryKeyStatement.setString(2, table);
-      try (ResultSet resultSet = primaryKeyStatement.executeQuery()) {
-        while (resultSet.next()) {
-          keyColumns.add(resultSet.getString(1));
-        }
-      }
-    }
-    return keyColumns;
-  }
-
-  private List<TableInformation> getCTEnabledTables(Connection connection) throws SQLException {
-    List<TableInformation> tableInformations = new LinkedList<>();
-    String stmt = "SELECT s.name as schema_name, t.name AS table_name, ctt.* FROM sys.change_tracking_tables ctt " +
-      "INNER JOIN sys.tables t on t.object_id = ctt.object_id INNER JOIN sys.schemas s on s.schema_id = t.schema_id";
-    ResultSet rs = connection.createStatement().executeQuery(stmt);
-    while (rs.next()) {
-      String schemaName = rs.getString("schema_name");
-      String tableName = rs.getString("table_name");
-      tableInformations.add(new TableInformation(schemaName, tableName,
-                                                 getColumnns(connection, schemaName, tableName),
-                                                 getKeyColumns(connection, schemaName, tableName)));
-    }
-    return tableInformations;
-  }
 
   private void checkCTEnabled(Connection connection, String name)
     throws SQLException {
