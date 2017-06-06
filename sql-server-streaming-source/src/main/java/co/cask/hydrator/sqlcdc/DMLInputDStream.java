@@ -46,7 +46,7 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
                   String password, long currentTrackingVersion) {
     super(ssc, tag);
     this.tag = tag;
-    this.sparkContext = ssc.sparkContext();
+    this.sparkContext = ssc.sc();
     this.connection = connection;
     this.username = username;
     this.password = password;
@@ -57,7 +57,7 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
                   String password) {
     super(ssc, tag);
     this.tag = tag;
-    this.sparkContext = ssc.sparkContext();
+    this.sparkContext = ssc.sc();
     this.connection = connection;
     this.username = username;
     this.password = password;
@@ -79,7 +79,7 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
     for (TableInformation tableInformation : tableInformations) {
       changeRDDs.add(getChangeData(tableInformation, prev, currentTrackingVersion));
     }
-    RDD<StructuredRecord> changes = sparkContext.union(JavaConversions.asScalaBuffer(changeRDDs), tag);
+    RDD<StructuredRecord> changes = ssc().sc().union(JavaConversions.asScalaBuffer(changeRDDs), tag);
     return Option.apply(changes);
   }
 
@@ -97,8 +97,6 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
 
   private RDD<StructuredRecord> getChangeData(TableInformation tableInformation, long prev, long currentTrackingVersion) {
 
-    final SparkContext sparkC = sparkContext;
-
     String stmt = String.format("SELECT [CT].[SYS_CHANGE_VERSION], [CT].[SYS_CHANGE_CREATION_VERSION], " +
                                   "[CT].[SYS_CHANGE_OPERATION], %s, %s FROM [%s] as [CI] RIGHT OUTER JOIN " +
                                   "CHANGETABLE (CHANGES [%s], %s) as [CT] on %s where [CT]" +
@@ -113,7 +111,7 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
     LOG.info("Query String: {}" + stmt);
     LOG.info("### the prev {} curr {}", prev, currentTrackingVersion);
     //TODO Currently we are not partitioning the data. We should partition it for scalability
-    return new JdbcRDD<>(sparkC, dbConnection, stmt, prev, this.currentTrackingVersion, 1,
+    return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, prev, this.currentTrackingVersion, 1,
                          new ResultSetToDMLRecord(tableInformation),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }

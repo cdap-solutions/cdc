@@ -35,7 +35,8 @@ public class DDLInputDStream extends InputDStream<StructuredRecord> {
                   String password) {
     super(ssc, tag);
     this.tag = tag;
-    this.sparkContext = ssc.sparkContext();
+    System.out.println("#### streaming context is " + ssc + "sparkcontext is " + sparkContext);
+    this.sparkContext = ssc.sc();
     this.connection = connection;
     this.username = username;
     this.password = password;
@@ -43,6 +44,7 @@ public class DDLInputDStream extends InputDStream<StructuredRecord> {
 
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
+    LOG.info("Computer called");
     List<TableInformation> tableInformations =
       new TableInformationFactory(dbConnection).getCTEnabledTables();
     List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
@@ -50,30 +52,33 @@ public class DDLInputDStream extends InputDStream<StructuredRecord> {
       changeRDDs.add(getColumnns(tableInformation));
     }
 
-    RDD<StructuredRecord> changes = sparkContext.union(JavaConversions.asScalaBuffer(changeRDDs), tag);
+    RDD<StructuredRecord> changes = ssc().sc().union(JavaConversions.asScalaBuffer(changeRDDs), tag);
     return Option.apply(changes);
   }
 
   @Override
   public void start() {
+    LOG.info("Start bring called username {}, password, ssc {}", username, password, ssc());
     // create connection while start receiving data
     dbConnection = new SQLServerConnection(connection, username, password);
   }
 
   @Override
   public void stop() {
+    LOG.info("Stop being called");
     // no-op
     // Also no need to close the dbconnection as JdbcRDD takes care of closing it
   }
 
   private JdbcRDD<StructuredRecord> getColumnns(TableInformation tableInformation) {
 
-    final SparkContext sparkC = sparkContext;
+    LOG.info("SSC is  {}  and sc is {}", ssc(), ssc().sc());
+
 
     String stmt = String.format("SELECT TOP 1 * FROM [%s].[%s] where ?=?", tableInformation.getSchemaName(),
                                 tableInformation.getName());
 
-    return new JdbcRDD<>(sparkC, dbConnection, stmt, 1, 1, 1,
+    return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, 1, 1, 1,
                          new ResultSetToDDLRecord(tableInformation.getSchemaName(), tableInformation.getName()),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }
