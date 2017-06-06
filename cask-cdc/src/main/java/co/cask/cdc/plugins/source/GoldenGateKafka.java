@@ -38,6 +38,7 @@ import kafka.message.MessageAndMetadata;
 import kafka.serializer.DefaultDecoder;
 import org.apache.avro.SchemaNormalization;
 import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFunction;
@@ -216,9 +217,14 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
       public Tuple2<String, StructuredRecord> call(StructuredRecord record) throws Exception {
         return new Tuple2<>("", record);
       }
-    }).mapWithState(StateSpec.function(mapFunction));
+    }).mapWithState(StateSpec.function(mapFunction)).flatMap(new FlatMapFunction<StructuredRecord, StructuredRecord>() {
+      @Override
+      public Iterable<StructuredRecord> call(StructuredRecord record) throws Exception {
+        Normalizer normalizer = new Normalizer();
+        return normalizer.transform(record);
+      }
+    });
   }
-
 
   private int getPartitionId(kafka.javaapi.consumer.SimpleConsumer consumer) {
     Set<Integer> partitions = new HashSet<>();
