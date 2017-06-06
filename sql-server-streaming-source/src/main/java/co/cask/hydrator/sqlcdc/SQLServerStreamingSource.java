@@ -8,13 +8,23 @@ import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.etl.api.streaming.StreamingContext;
 import co.cask.cdap.etl.api.streaming.StreamingSource;
 import co.cask.hydrator.plugin.DBUtils;
+import com.google.common.base.Optional;
 import com.microsoft.sqlserver.jdbc.SQLServerDriver;
 import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.Function3;
+import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.streaming.State;
+import org.apache.spark.streaming.StateSpec;
 import org.apache.spark.streaming.api.java.JavaDStream;
+import org.apache.spark.streaming.api.java.JavaMapWithStateDStream;
+import org.apache.spark.streaming.api.java.JavaPairDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.None;
+import scala.Tuple2;
 import scala.reflect.ClassTag;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -22,9 +32,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Plugin(type = StreamingSource.PLUGIN_TYPE)
@@ -72,6 +84,66 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
                                                   getConnectionString(), conf.username, conf
                                                     .password), tag);
 
+    LOG.info("Created DDL DStream");
+
+    JavaPairDStream<String, StructuredRecord> stringStructuredRecordJavaPairDStream = ddlJavaDStream.mapToPair(new PairFunction<StructuredRecord, String, StructuredRecord>() {
+      @Override
+      public Tuple2<String, StructuredRecord> call(StructuredRecord structuredRecord) throws Exception {
+        return new Tuple2<>("", structuredRecord);
+      }
+    });
+
+    LOG.info("Mapped DDL DStream to pair");
+
+    Function3<String, Optional<StructuredRecord>, State<Map<String, String>>, Tuple2<StructuredRecord, Boolean>>
+      mapFunction =
+      new Function3<String, Optional<StructuredRecord>, State<Map<String, String>>, Tuple2<StructuredRecord, Boolean>>() {
+        @Override
+        public Tuple2<StructuredRecord, Boolean> call(String v1, Optional<StructuredRecord> value, State<Map<String, String>>
+          stateStore) throws Exception {
+          if (stateStore.exists()) {
+            LOG.info("Current state is {}", stateStore.get());
+          } else {
+            LOG.info("State does not exists");
+          }
+          StructuredRecord input = value.get();
+          String tableName = input.get("table");
+          String tableSchemaStructure = input.get("schema");
+
+          Map<String, String> state;
+          if (stateStore.exists()) {
+            state = stateStore.get();
+            if  (state.containsKey(tableName) && state.get(tableName).equals(tableSchemaStructure)) {
+              return new Tuple2<>(value.get(), false);
+            }
+          } else {
+            state = new HashMap<>();
+          }
+          state.put(tableName, tableSchemaStructure);
+          stateStore.update(state);
+          LOG.info("Current map state is {}", stateStore.get());
+          return new Tuple2<>(value.get(), true);
+        }
+      };
+
+    JavaMapWithStateDStream<String, StructuredRecord, Map<String, String>,
+      Tuple2<StructuredRecord, Boolean>> stringStructuredRecordMapTuple2JavaMapWithStateDStream =
+      stringStructuredRecordJavaPairDStream.mapWithState(StateSpec.function(mapFunction));
+
+    JavaDStream<Tuple2<StructuredRecord, Boolean>> filter = stringStructuredRecordMapTuple2JavaMapWithStateDStream.filter(new Function<Tuple2<StructuredRecord, Boolean>, Boolean>() {
+      @Override
+      public Boolean call(Tuple2<StructuredRecord, Boolean> v1) throws Exception {
+        return v1._2();
+      }
+    });
+
+    JavaDStream<StructuredRecord> finalDDL = filter.map(new Function<Tuple2<StructuredRecord, Boolean>, StructuredRecord>() {
+      @Override
+      public StructuredRecord call(Tuple2<StructuredRecord, Boolean> v1) throws Exception {
+        return v1._1();
+      }
+    });
+
     JavaDStream<StructuredRecord> dmlJavaDStream =
       JavaDStream.fromDStream(new DMLInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
                                                   getConnectionString(), conf.username, conf
@@ -80,7 +152,7 @@ public class SQLServerStreamingSource extends StreamingSource<StructuredRecord> 
     List<JavaDStream<StructuredRecord>> records = new ArrayList<>();
     records.add(dmlJavaDStream);
 
-    JavaDStream<StructuredRecord> union = streamingContext.getSparkStreamingContext().union(ddlJavaDStream, records);
+    JavaDStream<StructuredRecord> union = streamingContext.getSparkStreamingContext().union(finalDDL, records);
 
 
     union.map(new Function<StructuredRecord, StructuredRecord>() {
