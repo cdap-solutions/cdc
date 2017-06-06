@@ -2,7 +2,6 @@ package co.cask.hydrator.sqlcdc;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
-import co.cask.hydrator.plugin.DBUtils;
 import com.google.common.base.Joiner;
 import org.apache.spark.SparkContext;
 import org.apache.spark.rdd.JdbcRDD;
@@ -18,13 +17,10 @@ import scala.reflect.ClassManifestFactory$;
 import scala.reflect.ClassTag;
 
 import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
@@ -70,12 +66,8 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
 
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
-    List<TableInformation> tableInformations = null;
-    try {
-      tableInformations = getCTEnabledTables(dbConnection.apply());
-    } catch (SQLException e) {
-      e.printStackTrace();
-    }
+    List<TableInformation> tableInformations =
+      new TableInformationFactory(dbConnection).getCTEnabledTables();
     List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
     long prev = currentTrackingVersion;
     try {
@@ -158,47 +150,5 @@ public class DMLInputDStream extends InputDStream<StructuredRecord> {
     }
     connection.close();
     return changeVersion;
-  }
-
-  private List<Schema.Field> getColumnns(Connection connection, String schema, String table) throws SQLException {
-    String query = String.format("SELECT * from [%s].[%s]", schema, table);
-    Statement statement = connection.createStatement();
-    statement.setMaxRows(1);
-    ResultSet resultSet = statement.executeQuery(query);
-    return DBUtils.getSchemaFields(resultSet);
-  }
-
-  private Set<String> getKeyColumns(Connection connection, String schema, String table) throws SQLException {
-    String stmt =
-      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE " +
-        "OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA+'.'+CONSTRAINT_NAME), 'IsPrimaryKey') = 1 AND " +
-        "TABLE_SCHEMA = ? AND TABLE_NAME = ?";
-    Set<String> keyColumns = new LinkedHashSet<>();
-    try (PreparedStatement primaryKeyStatement = connection.prepareStatement(stmt)) {
-      primaryKeyStatement.setString(1, schema);
-      primaryKeyStatement.setString(2, table);
-      try (ResultSet resultSet = primaryKeyStatement.executeQuery()) {
-        while (resultSet.next()) {
-          keyColumns.add(resultSet.getString(1));
-        }
-      }
-    }
-    return keyColumns;
-  }
-
-  private List<TableInformation> getCTEnabledTables(Connection connection) throws SQLException {
-    List<TableInformation> tableInformations = new LinkedList<>();
-    String stmt = "SELECT s.name as schema_name, t.name AS table_name, ctt.* FROM sys.change_tracking_tables ctt " +
-      "INNER JOIN sys.tables t on t.object_id = ctt.object_id INNER JOIN sys.schemas s on s.schema_id = t.schema_id";
-    ResultSet rs = connection.createStatement().executeQuery(stmt);
-    while (rs.next()) {
-      String schemaName = rs.getString("schema_name");
-      String tableName = rs.getString("table_name");
-      tableInformations.add(new TableInformation(schemaName, tableName,
-                                                 getColumnns(connection, schemaName, tableName),
-                                                 getKeyColumns(connection, schemaName, tableName)));
-    }
-    connection.close();
-    return tableInformations;
   }
 }
