@@ -64,7 +64,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <cdap.version>4.2.0-SNAPSHOT</cdap.version>
-    <hydrator.version>1.6.1</hydrator.version>
+    <hydrator.version>1.7.0-SNAPSHOT</hydrator.version>
     <spark.version>1.6.1</spark.version>
     <commons.version>1.2</commons.version>
     <avro.version>1.8.1</avro.version>
@@ -73,6 +73,7 @@
     <widgets.dir>widgets</widgets.dir>
     <docs.dir>docs</docs.dir>
     <kafka.version>0.8.2.2</kafka.version>
+    <mssql.jdbc.version>6.1.0.jre7</mssql.jdbc.version>
     <hadoop.version>2.6.0-cdh5.10.0</hadoop.version>
     <!-- properties for script build step that creates the config files for the artifacts -->
     <app.parents>system:cdap-data-streams[4.1.0-SNAPSHOT,5.0.0)</app.parents>
@@ -394,6 +395,17 @@
           <groupId>org.slf4j</groupId>
         </exclusion>
       </exclusions>
+    </dependency>
+    <!-- Dependency for sql server ct-->
+    <dependency>
+      <groupId>co.cask.hydrator</groupId>
+      <artifactId>database-plugins</artifactId>
+      <version>${hydrator.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.microsoft.sqlserver</groupId>
+      <artifactId>mssql-jdbc</artifactId>
+      <version>${mssql.jdbc.version}</version>
     </dependency>
   </dependencies>
 

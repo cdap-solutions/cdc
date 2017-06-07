@@ -14,7 +14,7 @@
  * the License.
  */
 
-package co.cask.cdc.plugins.source;
+package co.cask.cdc.plugins.source.oracle;
 
 import co.cask.cdap.api.dataset.DatasetProperties;
 import co.cask.cdap.etl.api.PipelineConfigurer;
