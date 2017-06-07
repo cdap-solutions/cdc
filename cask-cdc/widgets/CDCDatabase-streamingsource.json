@@ -41,15 +41,47 @@
     {
       "widget-type": "non-editable-schema-editor",
       "schema": {
-        "name": "etlSchemaBody",
         "type": "record",
+        "name": "etlSchemaBody",
         "fields": [
           {
-            "name": "message",
+            "name": "op_type",
             "type": [
-              "bytes",
+              "string",
               "null"
             ]
+          },
+          {
+            "name": "table",
+            "type": "string"
+          },
+          {
+            "name": "primary_keys",
+            "type": {
+              "type": "array",
+              "items": "string"
+            }
+          },
+          {
+            "name": "schema",
+            "type": "string"
+          },
+          {
+            "name": "change",
+            "type": {
+              "type": "record",
+              "name": "changerecord",
+              "fields": [
+                {
+                  "name": "columns",
+                  "type": {
+                    "type": "map",
+                    "keys": "string",
+                    "values": "string"
+                  }
+                }
+              ]
+            }
           }
         ]
       }

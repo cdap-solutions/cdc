@@ -109,7 +109,7 @@ public class CDCKudu extends SparkSink<StructuredRecord> {
 
     for (String column : columnsToAdd) {
       Schema.Field newField = newSchema.getField(column);
-      Type kuduType = toKuduType(column, newField.getSchema());
+      Type kuduType = toKuduType(column, newField.getSchema(), new HashSet<String>());
       alterTableOptions.addNullableColumn(column, kuduType);
       LOG.info("Column {} of type {} will be added to the Kudu table {}.", column, kuduType, table.getName());
     }
@@ -145,14 +145,14 @@ public class CDCKudu extends SparkSink<StructuredRecord> {
       case "I":
         Insert insert = table.newInsert();
         for (Schema.Field field : fields) {
-          addColumnDataBasedOnType(insert.getRow(), field, change.get(field.getName()));
+          addColumnDataBasedOnType(insert.getRow(), field, change.get(field.getName()), new HashSet<>(primaryKeys));
         }
         session.apply(insert);
         break;
       case "U":
         Update update = table.newUpdate();
         for (Schema.Field field : fields) {
-          addColumnDataBasedOnType(update.getRow(), field, change.get(field.getName()));
+          addColumnDataBasedOnType(update.getRow(), field, change.get(field.getName()), new HashSet<>(primaryKeys));
         }
         session.apply(update);
         break;
@@ -161,7 +161,7 @@ public class CDCKudu extends SparkSink<StructuredRecord> {
         for (String keyColumn : primaryKeys) {
           for (Schema.Field field : fields) {
             if (field.getName().equals(keyColumn)) {
-              addColumnDataBasedOnType(delete.getRow(), field, change.get(field.getName()));
+              addColumnDataBasedOnType(delete.getRow(), field, change.get(field.getName()), new HashSet<>(primaryKeys));
               break;
             }
           }
@@ -174,16 +174,18 @@ public class CDCKudu extends SparkSink<StructuredRecord> {
   }
 
   private void addColumnDataBasedOnType(PartialRow row, co.cask.cdap.api.data.schema.Schema.Field field,
-                                        @Nullable Object value) throws TypeConversionException {
+                                        @Nullable Object value, Set<String> primaryKeys)
+    throws TypeConversionException {
     String columnName = field.getName();
-    Type type = toKuduType(field.getName(), field.getSchema());
     if (value == null) {
       row.setNull(columnName);
       return;
     }
+
+    Type type = toKuduType(field.getName(), field.getSchema(), primaryKeys);
     switch (type) {
       case STRING:
-        row.addString(columnName, (String) value);
+        row.addString(columnName, String.valueOf(value));
         break;
       case INT32:
         row.addInt(columnName, (int) value);
@@ -288,7 +290,7 @@ public class CDCKudu extends SparkSink<StructuredRecord> {
     List<ColumnSchema> columnSchemas = new ArrayList<>();
     for (co.cask.cdap.api.data.schema.Schema.Field field : fields) {
       String name = field.getName();
-      Type kuduType = toKuduType(name, field.getSchema());
+      Type kuduType = toKuduType(name, field.getSchema(), columns);
       ColumnSchema.ColumnSchemaBuilder builder = new ColumnSchema.ColumnSchemaBuilder(name, kuduType);
       if (field.getSchema().isNullable() && !columns.contains(name)) {
         builder.nullable(true);
@@ -310,8 +312,18 @@ public class CDCKudu extends SparkSink<StructuredRecord> {
    * @return {@link Type} Kudu type.
    * @throws TypeConversionException thrown when can't be converted.
    */
-  private Type toKuduType(String name, co.cask.cdap.api.data.schema.Schema schema) throws TypeConversionException {
+  private Type toKuduType(String name, co.cask.cdap.api.data.schema.Schema schema, Set<String> primaryKeys)
+    throws TypeConversionException {
     co.cask.cdap.api.data.schema.Schema.Type type = schema.getType();
+
+    if (primaryKeys.contains(name)) {
+      // primary key cannot be BOOL, FLOAT, or DOUBLE in Kudu
+      // so if type is one of them, then convert to String
+      if (type == Schema.Type.DOUBLE || type == Schema.Type.FLOAT || type == Schema.Type.BOOLEAN) {
+        return Type.STRING;
+      }
+    }
+
     if (type == co.cask.cdap.api.data.schema.Schema.Type.STRING) {
       return Type.STRING;
     } else if (type == co.cask.cdap.api.data.schema.Schema.Type.INT) {
@@ -327,7 +339,7 @@ public class CDCKudu extends SparkSink<StructuredRecord> {
     } else if (type == co.cask.cdap.api.data.schema.Schema.Type.BOOLEAN) {
       return Type.BOOL;
     } else if (type == co.cask.cdap.api.data.schema.Schema.Type.UNION) { // Recursively drill down into the non-nullable type.
-      return toKuduType(name, schema.getNonNullable());
+      return toKuduType(name, schema.getNonNullable(), primaryKeys);
     } else {
       throw new TypeConversionException(
         String.format("Field '%s' is having a type '%s' that is not supported by Kudu. Please change the type.",

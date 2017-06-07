@@ -61,7 +61,7 @@ import java.util.Set;
  * Streaming source for reading from Golden Gate Kafka topic.
  */
 @Plugin(type = StreamingSource.PLUGIN_TYPE)
-@Name("GoldenGate")
+@Name("CDCDatabase")
 @Description("Streaming source for reading through Golden Gate Kafka topic")
 public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> {
   private static final Logger LOG = LoggerFactory.getLogger(GoldenGateKafka.class);
