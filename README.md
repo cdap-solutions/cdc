@@ -7,7 +7,7 @@ the changes from databases such as Oracle and Microsoft SQL Server and to push t
 to sinks such as Kudu, HBase, and Database.
 
 * [Oracle](docs/oracle/Oracle.md)
-* [Microsoft SQL Server](docs/sqlserver/CTSQLServer.md)
+* [Microsoft SQL Server](docs/CTSQLServer.md)
 
 
 
