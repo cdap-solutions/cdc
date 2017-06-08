@@ -16,17 +16,9 @@
 package co.cask.cdc.plugins.source.oracle;
 
 import co.cask.cdap.api.annotation.Description;
-import co.cask.cdap.api.annotation.Macro;
 import co.cask.hydrator.common.ReferencePluginConfig;
-import kafka.javaapi.PartitionMetadata;
-import kafka.javaapi.TopicMetadata;
-import kafka.javaapi.TopicMetadataRequest;
-import kafka.javaapi.TopicMetadataResponse;
 
 import java.io.Serializable;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 import javax.annotation.Nullable;
 
 /**
@@ -37,18 +29,15 @@ public class GoldenGateKafkaConfig extends ReferencePluginConfig implements Seri
   private static final long serialVersionUID = 8069169417140954175L;
 
   @Description("Kafka broker specified in host:port form. For example, example.com:9092")
-  @Macro
   private String broker;
 
-  @Description("Name of the topic to which Golden Gate publishes the DDL and DML changes.")
-  @Macro
+  @Description("Name of the topic to which Oracle GoldenGate is configured to publish schema and data changes.")
   private String topic;
 
   @Description("The default initial offset to read from. " +
     "An offset of -2 means the smallest offset. An offset of -1 means the latest offset. Defaults to -1. " +
     "Offsets are inclusive. If an offset of 5 is used, the message at offset 5 will be read. ")
   @Nullable
-  @Macro
   private Long defaultInitialOffset;
 
   @Description("Max number of records to read per second per partition. 0 means there is no limit. Defaults to 1000.")
@@ -85,7 +74,7 @@ public class GoldenGateKafkaConfig extends ReferencePluginConfig implements Seri
   }
 
   public Long getDefaultInitialOffset() {
-    return defaultInitialOffset;
+    return defaultInitialOffset == null ? -1L : defaultInitialOffset;
   }
 
   public Integer getMaxRatePerPartition() {
@@ -103,6 +92,10 @@ public class GoldenGateKafkaConfig extends ReferencePluginConfig implements Seri
     } catch (Exception e) {
       throw new IllegalArgumentException(String.format("Broker address '%s' should be in the form of 'host:port'.",
                                                        broker));
+    }
+
+    if (getTopic() == null) {
+      throw new IllegalArgumentException("Name of the Kafka topic is missing.");
     }
   }
 }
