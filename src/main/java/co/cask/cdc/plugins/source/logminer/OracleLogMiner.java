@@ -28,9 +28,14 @@ import org.apache.spark.streaming.api.java.JavaDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  *
@@ -90,14 +95,30 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
     return String.format("jdbc:oracle:thin:@%s:%d:%s", conf.hostName, conf.port, conf.dbName);
   }
 
-  private void setUpLogMiner(Connection connection) {
-    // TODO: Fetch all the redo logs using the following query
+  private void setUpLogMiner(Connection connection) throws SQLException {
+    // Fetch all the redo logs using the following query
     // SELECT distinct member LOGFILENAME FROM V$LOGFILE;
+    List<String> redoFiles = new ArrayList<>();
+    PreparedStatement statement = connection.prepareStatement("SELECT distinct member LOGFILENAME FROM V$LOGFILE");
+    try (ResultSet result = statement.executeQuery()) {
+      while (result.next()) {
+        redoFiles.add(result.getString(1));
+      }
+    }
 
-    // TODO : Execute the below statement for all the files received from the above statement
+    // Add all the redo files
     // execute DBMS_LOGMNR.ADD_LOGFILE ('/u01/app/oracle/oradata/xe/redo01.log');
+    for (String redoFile : redoFiles) {
+      String addFileQuery = String.format("execute DMBS_LOGMNR.ADD_LOGFILE('%s');", redoFile);
+      CallableStatement callableStatement = connection.prepareCall(addFileQuery);
+      callableStatement.execute();
+    }
 
-    // TODO : Execute this statement to start LogMiner
+    // Start LogMiner
     // execute DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog);
+    CallableStatement callableStatement = connection.prepareCall(
+      "execute DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog " +
+        "+ DBMS_LOGMNR.COMMITTED_DATA_ONLY + DBMS_LOGMNR.NO_SQL_DELIMITER));");
+    callableStatement.execute();
   }
 }
