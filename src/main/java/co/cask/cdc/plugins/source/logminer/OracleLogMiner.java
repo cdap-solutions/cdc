@@ -52,6 +52,8 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
   public JavaDStream<StructuredRecord> getStream(StreamingContext streamingContext) throws Exception {
     Connection connection;
     try {
+      // https://blogs.oracle.com/dev2dev/get-oracle-jdbc-drivers-and-ucp-from-oracle-maven-repository-without-ides
+      // Follow the instructions in the above link to find out how to include Oracle JDBC driver.
       Class.forName(OracleDriver.class.getName());
       if (conf.username != null && conf.password != null) {
         connection = DriverManager.getConnection(getConnectionString(), conf.username, conf.password);
