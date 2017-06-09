@@ -24,6 +24,7 @@ import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.etl.api.PipelineConfigurer;
 import co.cask.cdap.etl.api.streaming.StreamingContext;
 import co.cask.cdap.etl.api.streaming.StreamingSource;
+import co.cask.cdc.plugins.source.ReferenceStreamingSource;
 import com.google.common.base.Optional;
 import kafka.api.OffsetRequest;
 import kafka.api.PartitionOffsetRequestInfo;

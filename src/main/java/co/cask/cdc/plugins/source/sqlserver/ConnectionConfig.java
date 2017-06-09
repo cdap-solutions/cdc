@@ -13,7 +13,6 @@ import javax.annotation.Nullable;
  */
 public class ConnectionConfig extends ReferencePluginConfig {
 
-
   public static final String HOST_NAME = "hostname";
   public static final String PORT = "port";
   public static final String USERNAME = "username";

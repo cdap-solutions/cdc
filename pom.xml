@@ -59,11 +59,34 @@
       <id>cloudera</id>
       <url>https://repository.cloudera.com/content/repositories/releases/</url>
     </repository>
+    <repository>
+      <id>maven.oracle.com</id>
+      <name>oracle-maven-repo</name>
+      <url>https://maven.oracle.com</url>
+      <layout>default</layout>
+      <releases>
+        <enabled>true</enabled>
+        <updatePolicy>always</updatePolicy>
+      </releases>
+    </repository>
   </repositories>
+
+  <pluginRepositories>
+    <pluginRepository>
+      <id>maven.oracle.com</id>
+      <name>oracle-maven-repo</name>
+      <url>https://maven.oracle.com</url>
+      <layout>default</layout>
+      <releases>
+        <enabled>true</enabled>
+        <updatePolicy>always</updatePolicy>
+      </releases>
+    </pluginRepository>
+  </pluginRepositories>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <cdap.version>4.2.0-SNAPSHOT</cdap.version>
+    <cdap.version>4.2.0</cdap.version>
     <hydrator.version>1.7.0-SNAPSHOT</hydrator.version>
     <spark.version>1.6.1</spark.version>
     <commons.version>1.2</commons.version>
@@ -74,6 +97,7 @@
     <docs.dir>docs</docs.dir>
     <kafka.version>0.8.2.2</kafka.version>
     <mssql.jdbc.version>6.1.0.jre7</mssql.jdbc.version>
+    <oracle.jdbc.version>12.2.0.1</oracle.jdbc.version>
     <hadoop.version>2.6.0-cdh5.10.0</hadoop.version>
     <!-- properties for script build step that creates the config files for the artifacts -->
     <app.parents>system:cdap-data-streams[4.1.0-SNAPSHOT,5.0.0)</app.parents>
@@ -406,6 +430,11 @@
       <groupId>com.microsoft.sqlserver</groupId>
       <artifactId>mssql-jdbc</artifactId>
       <version>${mssql.jdbc.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.oracle.jdbc</groupId>
+      <artifactId>ojdbc8</artifactId>
+      <version>${oracle.jdbc.version}</version>
     </dependency>
   </dependencies>
 
