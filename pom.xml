@@ -87,7 +87,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <cdap.version>4.2.0</cdap.version>
-    <hydrator.version>1.7.0-SNAPSHOT</hydrator.version>
+    <hydrator.version>1.7.0</hydrator.version>
     <spark.version>1.6.1</spark.version>
     <commons.version>1.2</commons.version>
     <avro.version>1.8.1</avro.version>
