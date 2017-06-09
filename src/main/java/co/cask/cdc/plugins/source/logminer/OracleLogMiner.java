@@ -55,7 +55,7 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
 
   @Override
   public JavaDStream<StructuredRecord> getStream(StreamingContext streamingContext) throws Exception {
-    Connection connection;
+    Connection connection = null;
     try {
       // https://blogs.oracle.com/dev2dev/get-oracle-jdbc-drivers-and-ucp-from-oracle-maven-repository-without-ides
       // Follow the instructions in the above link to find out how to include Oracle JDBC driver.
@@ -65,16 +65,21 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
       } else {
         connection = DriverManager.getConnection(getConnectionString(), null, null);
       }
+
+      setUpLogMiner(connection);
+      queryLogMinerViewContent(connection);
+      closeLogMiner(connection);
+      return null;
     } catch (Exception e) {
       if (e instanceof SQLException) {
         LOG.error("Failed to establish connection with SQL Server with the given configuration.");
       }
       throw e;
+    } finally {
+      if (connection != null) {
+        connection.close();
+      }
     }
-
-    setUpLogMiner(connection);
-    queryLogMinerViewContent(connection);
-    return null;
   }
 
   private void queryLogMinerViewContent(Connection connection) {
@@ -119,6 +124,13 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
     CallableStatement callableStatement = connection.prepareCall(
       "execute DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog " +
         "+ DBMS_LOGMNR.COMMITTED_DATA_ONLY + DBMS_LOGMNR.NO_SQL_DELIMITER));");
+    callableStatement.execute();
+  }
+
+  private void closeLogMiner(Connection connection) throws SQLException {
+    // Stop LogMiner
+    // execute DBMS_LOGMNR.END_LOGMNR
+    CallableStatement callableStatement = connection.prepareCall("execute DBMS_LOGMNR.END_LOGMNR;");
     callableStatement.execute();
   }
 }
