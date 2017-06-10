@@ -27,15 +27,11 @@ import oracle.jdbc.driver.OracleDriver;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.reflect.ClassTag;
 
-import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  *
@@ -66,10 +62,18 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
         connection = DriverManager.getConnection(getConnectionString(), null, null);
       }
 
-      setUpLogMiner(connection);
-      queryLogMinerViewContent(connection);
-      closeLogMiner(connection);
-      return null;
+      // get change information dtream. This dstream has both schema and data changes
+      LOG.info("Creating change information dstream");
+      ClassTag<StructuredRecord> tag = scala.reflect.ClassTag$.MODULE$.apply(StructuredRecord.class);
+      JavaDStream<StructuredRecord> changeDStream =
+        JavaDStream.fromDStream(new ChnageInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
+                                                       getConnectionString(), conf.username, conf
+                                                         .password), tag);
+
+
+      JavaDStream<Long> count = changeDStream.count();
+      System.out.println("The count is: " + count);
+      return changeDStream;
     } catch (Exception e) {
       if (e instanceof SQLException) {
         LOG.error("Failed to establish connection with SQL Server with the given configuration.");
@@ -82,55 +86,8 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
     }
   }
 
-  private void queryLogMinerViewContent(Connection connection) {
-    // Set the given SCN or find out the last one used or get the latest one.
-    // SELECT CURRENT_SCN FROM V$DATABASE; --> to get the latest one
-
-    // Now query the LogMiner contents
-    // select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = 'USERS'
-    // AND scn >= $(scn) order by scn asc
-
-    // Then filter the records by the right table : table_name from this column
-    // Get the SQL query from the sql_redo column and use the PL/SQL Parser to parse the sql string and get the columns.
-
-    // Persist the last SCN in our StateStore so that we can query from that point onwards in our next run.
-  }
-
   private String getConnectionString() {
     return String.format("jdbc:oracle:thin:@%s:%d:%s", conf.hostName, conf.port, conf.dbName);
   }
 
-  private void setUpLogMiner(Connection connection) throws SQLException {
-    // Fetch all the redo logs using the following query
-    // SELECT distinct member LOGFILENAME FROM V$LOGFILE;
-    List<String> redoFiles = new ArrayList<>();
-    PreparedStatement statement = connection.prepareStatement("SELECT distinct member LOGFILENAME FROM V$LOGFILE");
-    try (ResultSet result = statement.executeQuery()) {
-      while (result.next()) {
-        redoFiles.add(result.getString(1));
-      }
-    }
-
-    // Add all the redo files
-    // execute DBMS_LOGMNR.ADD_LOGFILE ('/u01/app/oracle/oradata/xe/redo01.log');
-    for (String redoFile : redoFiles) {
-      String addFileQuery = String.format("execute DMBS_LOGMNR.ADD_LOGFILE('%s');", redoFile);
-      CallableStatement callableStatement = connection.prepareCall(addFileQuery);
-      callableStatement.execute();
-    }
-
-    // Start LogMiner
-    // execute DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog);
-    CallableStatement callableStatement = connection.prepareCall(
-      "execute DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog " +
-        "+ DBMS_LOGMNR.COMMITTED_DATA_ONLY + DBMS_LOGMNR.NO_SQL_DELIMITER));");
-    callableStatement.execute();
-  }
-
-  private void closeLogMiner(Connection connection) throws SQLException {
-    // Stop LogMiner
-    // execute DBMS_LOGMNR.END_LOGMNR
-    CallableStatement callableStatement = connection.prepareCall("execute DBMS_LOGMNR.END_LOGMNR;");
-    callableStatement.execute();
-  }
 }

@@ -97,7 +97,7 @@
     <docs.dir>docs</docs.dir>
     <kafka.version>0.8.2.2</kafka.version>
     <mssql.jdbc.version>6.1.0.jre7</mssql.jdbc.version>
-    <oracle.jdbc.version>12.2.0.1</oracle.jdbc.version>
+    <oracle.jdbc.version>12.1.0.2</oracle.jdbc.version>
     <hadoop.version>2.6.0-cdh5.10.0</hadoop.version>
     <!-- properties for script build step that creates the config files for the artifacts -->
     <app.parents>system:cdap-data-streams[4.1.0-SNAPSHOT,5.0.0)</app.parents>
@@ -433,7 +433,7 @@
     </dependency>
     <dependency>
       <groupId>com.oracle.jdbc</groupId>
-      <artifactId>ojdbc8</artifactId>
+      <artifactId>ojdbc7</artifactId>
       <version>${oracle.jdbc.version}</version>
     </dependency>
   </dependencies>
