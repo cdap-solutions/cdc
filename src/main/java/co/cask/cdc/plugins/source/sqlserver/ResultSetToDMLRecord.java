@@ -78,6 +78,5 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     List<Schema.Field> schemaFields = DBUtils.getSchemaFields(resultSet);
     // drop first three columns as they are from change tracking tables and does not represent the change data
     return Schema.recordOf("rec", schemaFields.subList(CHANGE_TABLE_COLUMNS_SIZE, schemaFields.size()));
-
   }
 }

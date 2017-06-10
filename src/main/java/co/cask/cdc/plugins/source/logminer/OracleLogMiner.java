@@ -114,7 +114,7 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
     // Add all the redo files
     // execute DBMS_LOGMNR.ADD_LOGFILE ('/u01/app/oracle/oradata/xe/redo01.log');
     for (String redoFile : redoFiles) {
-      String addFileQuery = String.format("execute DMBS_LOGMNR.ADD_LOGFILE('%s');", redoFile);
+      String addFileQuery = String.format("execute DBMS_LOGMNR.ADD_LOGFILE('%s');", redoFile);
       CallableStatement callableStatement = connection.prepareCall(addFileQuery);
       callableStatement.execute();
     }
