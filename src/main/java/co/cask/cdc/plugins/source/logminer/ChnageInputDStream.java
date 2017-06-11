@@ -13,6 +13,8 @@ import scala.Option;
 import scala.reflect.ClassManifestFactory$;
 import scala.reflect.ClassTag;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 
 /**
@@ -52,9 +54,11 @@ public class ChnageInputDStream extends InputDStream<StructuredRecord> {
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
 
     try {
+      long prev = scn;
+      long cur = getCurrentSCN(dbConnection);
 //      setUpLogMiner(dbConnection.apply());
-      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent();
-
+      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur);
+      scn = cur;
       return Option.apply(changes.toJavaRDD().rdd());
 
     } catch (SQLException e) {
@@ -62,6 +66,18 @@ public class ChnageInputDStream extends InputDStream<StructuredRecord> {
       throw Throwables.propagate(e);
     }
 
+  }
+
+  private long getCurrentSCN(OracleServerConnection dbConnection) throws SQLException {
+    Connection connection = dbConnection.apply();
+    ResultSet resultSet = connection.createStatement().executeQuery("SELECT CURRENT_SCN FROM V$DATABASE");
+    long changeVersion = 0;
+    while (resultSet.next()) {
+      changeVersion = resultSet.getLong(1);
+      LOG.info("Current scn is {}", changeVersion);
+    }
+    connection.close();
+    return changeVersion;
   }
 
   @Override
@@ -81,10 +97,10 @@ public class ChnageInputDStream extends InputDStream<StructuredRecord> {
   }
 
 
-  private JdbcRDD<StructuredRecord> queryLogMinerViewContent() throws SQLException {
+  private JdbcRDD<StructuredRecord> queryLogMinerViewContent(long prev, long cur) throws SQLException {
 
-    String stmt = "select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = 'USERS' AND scn " +
-      ">= 4969561 AND ?=?";
+    String stmt = String.format("select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = " +
+                                  "'USERS' AND scn > %s AND scn <= %s AND ?=?", prev, cur);
     LOG.info("Querying for change data with statement {}", stmt);
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability

@@ -68,7 +68,7 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
       JavaDStream<StructuredRecord> changeDStream =
         JavaDStream.fromDStream(new ChnageInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
                                                        getConnectionString(), conf.username, conf
-                                                         .password), tag);
+                                                         .password, conf.startSCN), tag);
 
 
       JavaDStream<Long> count = changeDStream.count();

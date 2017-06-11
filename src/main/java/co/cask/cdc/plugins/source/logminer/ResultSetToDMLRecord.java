@@ -31,9 +31,11 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(changeSchema);
 
-    String sql_redo = resultSet.getString("OPERATION");
+    String sql_redo = resultSet.getString("SQL_REDO");
+    // TODO: Map the sql query to  correct  structure record here
     System.out.printf("### The redo log is " + sql_redo);
     recordBuilder.set("redoLog", sql_redo);
+
 
     return recordBuilder.build();
 
