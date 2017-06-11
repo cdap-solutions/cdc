@@ -32,6 +32,8 @@ import scala.reflect.ClassTag;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * A {@link InputDStream} which reads chnage tracking data from SQL Server and emits {@link StructuredRecord}
@@ -42,16 +44,18 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
   private String connection;
   private String username;
   private String password;
+  private String tableName;
   private OracleServerConnection dbConnection;
   private long scn;
 
   ChangeInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
-                     String password, long scn) {
+                     String password, String tableName, long scn) {
     super(ssc, tag);
     this.tag = tag;
     this.connection = connection;
     this.username = username;
     this.password = password;
+    this.tableName = tableName;
     this.scn = scn;
   }
 
@@ -73,15 +77,28 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
       long prev = scn;
       long cur = getCurrentSCN(dbConnection);
 //      setUpLogMiner(dbConnection.apply());
-      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur);
+      List<String> primaryKeys = getPrimaryKeys(tableName, dbConnection);
+      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur, primaryKeys);
       scn = cur;
       return Option.apply(changes.toJavaRDD().rdd());
-
     } catch (SQLException e) {
       e.printStackTrace();
       throw Throwables.propagate(e);
     }
+  }
 
+  private List<String> getPrimaryKeys(String tableName, OracleServerConnection dbConnection) throws SQLException {
+    List<String> keys = new ArrayList<>();
+    Connection connection = dbConnection.apply();
+    ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+      "SELECT column_name FROM all_cons_columns WHERE constraint_name = (" +
+        "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER(‘%s’) " +
+        "AND CONSTRAINT_TYPE = ‘P’);", tableName));
+    while (resultSet.next()) {
+      keys.add(resultSet.getString(1));
+    }
+    connection.close();
+    return keys;
   }
 
   private long getCurrentSCN(OracleServerConnection dbConnection) throws SQLException {
@@ -113,15 +130,15 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
   }
 
 
-  private JdbcRDD<StructuredRecord> queryLogMinerViewContent(long prev, long cur) throws SQLException {
+  private JdbcRDD<StructuredRecord> queryLogMinerViewContent(long prev, long cur, List<String> primaryKeys) throws SQLException {
 
     String stmt = String.format("select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = " +
-                                  "'USERS' AND scn > %s AND scn <= %s AND ?=?", prev, cur);
+                                  "'USERS' AND table_name = %s AND scn > %s AND scn <= %s AND ?=?", tableName, prev, cur);
     LOG.info("Querying for change data with statement {}", stmt);
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
     return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, 1, 1, 1,
-                         new ResultSetToDMLRecord(),
+                         new ResultSetToDMLRecord(tableName, primaryKeys),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
     // Set the given SCN or find out the last one used or get the latest one.
     // SELECT CURRENT_SCN FROM V$DATABASE; --> to get the latest one

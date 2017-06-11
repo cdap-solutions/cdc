@@ -1,5 +1,6 @@
 package co.cask.cdc.plugins.source.logminer;
 
+import co.cask.hydrator.plugin.DBUtils;
 import oracle.jdbc.driver.OracleDriver;
 
 import java.sql.CallableStatement;
@@ -53,6 +54,13 @@ public class Test {
       System.out.println("You made it, take control your database now!");
     } else {
       System.out.println("Failed to make connection!");
+    }
+
+    try {
+      ResultSet resultSet = connection.prepareStatement("select * from company where rownum = 1").executeQuery();
+      System.out.println(String.format("%s", DBUtils.getSchemaFields(resultSet)));
+    } catch (SQLException ex) {
+      ex.printStackTrace();
     }
 
     List<String> redoFiles = new ArrayList<>();

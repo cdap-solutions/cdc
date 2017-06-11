@@ -22,32 +22,47 @@ import scala.Serializable;
 import scala.runtime.AbstractFunction1;
 
 import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 
 /**
  * A serializable class to allow invoking {@link scala.Function1} from Java. The function converts {@link ResultSet}
  * to {@link StructuredRecord} for dml records
  */
 public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
+  private static final Schema.Field TABLE_FIELD = Schema.Field.of("table", Schema.of(Schema.Type.STRING));
+  private static final Schema.Field PRIMARY_KEYS_FIELD = Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING)));
+  private static final Schema.Field OP_TYPE_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
 
+  private final String tableName;
+  private final List<String> primaryKeys;
   static final String RECORD_NAME = "DMLRecord";
+  private final SQLParser sqlParser = new SQLParser();
 
+  public ResultSetToDMLRecord(String tableName, List<String> primaryKeys) {
+    this.tableName = tableName;
+    this.primaryKeys = primaryKeys;
+  }
 
   public StructuredRecord apply(ResultSet row) {
     try {
       return resultSetToStructureRecord(row);
-    } catch (SQLException e) {
+    } catch (Exception e) {
       throw new RuntimeException(e);
     }
   }
 
-  private StructuredRecord resultSetToStructureRecord(ResultSet resultSet) throws SQLException {
+  private StructuredRecord resultSetToStructureRecord(ResultSet resultSet) throws Exception {
     Schema changeSchema = Schema.recordOf(RECORD_NAME,
                                           Schema.Field.of("redoLog", Schema.of(Schema.Type.STRING)));
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(changeSchema);
 
     String sql_redo = resultSet.getString("SQL_REDO");
+
+    Map<String, String> fields = sqlParser.parseSQL(sql_redo);
+
+
     // TODO: Map the sql query to  correct  structure record here
     System.out.printf("### The redo log is " + sql_redo);
     recordBuilder.set("redoLog", sql_redo);
