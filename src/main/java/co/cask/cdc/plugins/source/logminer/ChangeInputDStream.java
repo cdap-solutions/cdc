@@ -17,6 +17,8 @@
 package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
+import co.cask.cdap.api.data.schema.Schema;
+import co.cask.hydrator.plugin.DBUtils;
 import com.google.common.base.Throwables;
 import org.apache.spark.rdd.JdbcRDD;
 import org.apache.spark.rdd.RDD;
@@ -33,7 +35,9 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A {@link InputDStream} which reads chnage tracking data from SQL Server and emits {@link StructuredRecord}
@@ -78,13 +82,36 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
       long cur = getCurrentSCN(dbConnection);
 //      setUpLogMiner(dbConnection.apply());
       List<String> primaryKeys = getPrimaryKeys(tableName, dbConnection);
-      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur, primaryKeys);
+      List<Schema.Field> fieldList = getFieldList(tableName, dbConnection);
+      Map<String, Integer> fieldTypes = getTableFields(tableName, dbConnection);
+      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur, primaryKeys, fieldTypes, fieldList);
       scn = cur;
       return Option.apply(changes.toJavaRDD().rdd());
     } catch (SQLException e) {
       e.printStackTrace();
       throw Throwables.propagate(e);
     }
+  }
+
+  private List<Schema.Field> getFieldList(String tableName, OracleServerConnection dbConnection) throws SQLException {
+    Connection connection = dbConnection.apply();
+    ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+      "SELECT * FROM %s WHERE 1 = 0", tableName));
+    return DBUtils.getSchemaFields(resultSet);
+  }
+
+  private Map<String, Integer> getTableFields(String tableName, OracleServerConnection dbConnection) throws SQLException {
+    Connection connection = dbConnection.apply();
+    ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+      "SELECT * FROM %s WHERE 1 = 0", tableName));
+    Map<String, Integer> fieldTypes = new HashMap<>();
+    int columnCount = resultSet.getMetaData().getColumnCount();
+    for (int i = 1; i <= columnCount; i++) {
+      String name = resultSet.getMetaData().getCatalogName(i);
+      int type = resultSet.getMetaData().getColumnType(i);
+      fieldTypes.put(name, type);
+    }
+    return fieldTypes;
   }
 
   private List<String> getPrimaryKeys(String tableName, OracleServerConnection dbConnection) throws SQLException {
@@ -130,15 +157,18 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
   }
 
 
-  private JdbcRDD<StructuredRecord> queryLogMinerViewContent(long prev, long cur, List<String> primaryKeys) throws SQLException {
+  private JdbcRDD<StructuredRecord> queryLogMinerViewContent(long prev, long cur, List<String> primaryKeys,
+                                                             Map<String, Integer> fieldTypes,
+                                                             List<Schema.Field> fieldList) throws SQLException {
 
     String stmt = String.format("select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = " +
-                                  "'USERS' AND table_name = %s AND scn > %s AND scn <= %s AND ?=?", tableName, prev, cur);
+                                  "'USERS' AND table_name = %s AND scn > %s AND scn <= %s AND ?=?",
+                                tableName, prev, cur);
     LOG.info("Querying for change data with statement {}", stmt);
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
     return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, 1, 1, 1,
-                         new ResultSetToDMLRecord(tableName, primaryKeys),
+                         new ResultSetToDMLRecord(tableName, primaryKeys, fieldTypes, fieldList),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
     // Set the given SCN or find out the last one used or get the latest one.
     // SELECT CURRENT_SCN FROM V$DATABASE; --> to get the latest one

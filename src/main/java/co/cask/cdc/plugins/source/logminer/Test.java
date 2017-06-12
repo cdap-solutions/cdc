@@ -57,7 +57,7 @@ public class Test {
     }
 
     try {
-      ResultSet resultSet = connection.prepareStatement("select * from company where rownum = 1").executeQuery();
+      ResultSet resultSet = connection.prepareStatement("select * from company where 1 = 0").executeQuery();
       System.out.println(String.format("%s", DBUtils.getSchemaFields(resultSet)));
     } catch (SQLException ex) {
       ex.printStackTrace();

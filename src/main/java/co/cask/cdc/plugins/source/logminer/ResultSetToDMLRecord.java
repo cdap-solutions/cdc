@@ -18,10 +18,17 @@ package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
+import oracle.jdbc.rowset.OracleSerialBlob;
+import oracle.jdbc.rowset.OracleSerialClob;
 import scala.Serializable;
 import scala.runtime.AbstractFunction1;
 
+import java.sql.Blob;
+import java.sql.Clob;
 import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Types;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -36,12 +43,18 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
 
   private final String tableName;
   private final List<String> primaryKeys;
+  private final Map<String, Integer> fieldTypes;
+  private final List<Schema.Field> fieldList;
+
   static final String RECORD_NAME = "DMLRecord";
   private final SQLParser sqlParser = new SQLParser();
 
-  public ResultSetToDMLRecord(String tableName, List<String> primaryKeys) {
+  public ResultSetToDMLRecord(String tableName, List<String> primaryKeys,
+                              Map<String, Integer> fieldTypes, List<Schema.Field> fieldList) {
     this.tableName = tableName;
     this.primaryKeys = primaryKeys;
+    this.fieldTypes = fieldTypes;
+    this.fieldList = fieldList;
   }
 
   public StructuredRecord apply(ResultSet row) {
@@ -53,22 +66,84 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   }
 
   private StructuredRecord resultSetToStructureRecord(ResultSet resultSet) throws Exception {
-    Schema changeSchema = Schema.recordOf(RECORD_NAME,
-                                          Schema.Field.of("redoLog", Schema.of(Schema.Type.STRING)));
+    Schema changeSchema = getChangeSchema();
+    Schema dmlSchema = getDMLSchema();
 
-    StructuredRecord.Builder recordBuilder = StructuredRecord.builder(changeSchema);
+    StructuredRecord.Builder recordBuilder = StructuredRecord.builder(dmlSchema);
+    recordBuilder.set(TABLE_FIELD.getName(), tableName);
+    recordBuilder.set(PRIMARY_KEYS_FIELD.getName(), primaryKeys);
+    recordBuilder.set(OP_TYPE_FIELD.getName(), getOpType(resultSet.getString("OPERATION")));
+    return getChangeData(resultSet, changeSchema, recordBuilder);
+  }
+
+  private String getOpType(String fromDB) {
+    if (fromDB.equalsIgnoreCase("INSERT")) {
+      return "I";
+    }
+
+    if (fromDB.equalsIgnoreCase("UPDATE")) {
+      return "U";
+    }
+
+    if (fromDB.equalsIgnoreCase("DELETE")) {
+      return "D";
+    }
+    return "UNKNOWN";
+  }
+
+  private StructuredRecord getChangeData(ResultSet resultSet, Schema changeSchema,
+                                         StructuredRecord.Builder recordBuilder) throws Exception {
+    StructuredRecord.Builder changeRecordBuilder = StructuredRecord.builder(changeSchema);
 
     String sql_redo = resultSet.getString("SQL_REDO");
+    Map<String, String> dataFields = sqlParser.parseSQL(sql_redo);
 
-    Map<String, String> fields = sqlParser.parseSQL(sql_redo);
-
-
-    // TODO: Map the sql query to  correct  structure record here
-    System.out.printf("### The redo log is " + sql_redo);
-    recordBuilder.set("redoLog", sql_redo);
-
-
+    for (Map.Entry<String, Integer> fieldType : fieldTypes.entrySet()) {
+      String fieldName = fieldType.getKey();
+      Integer sqlType = fieldType.getValue();
+      changeRecordBuilder.set(fieldName, transformValue(sqlType, dataFields.get(fieldName)));
+    }
+    StructuredRecord changeRecord = changeRecordBuilder.build();
+    recordBuilder.set("change", changeRecord);
     return recordBuilder.build();
+  }
+
+  private Object transformValue(Integer sqlColumnType, String original) throws SQLException {
+    switch (sqlColumnType) {
+      case Types.SMALLINT:
+      case Types.TINYINT:
+        return Integer.valueOf(original);
+      case Types.NUMERIC:
+      case Types.DECIMAL:
+        return Double.valueOf(original);
+      case Types.DATE:
+        return Long.valueOf(original);
+      case Types.TIME:
+        return Long.valueOf(original);
+      case Types.TIMESTAMP:
+        return Long.valueOf(original);
+      case Types.BLOB:
+        Blob blob = new OracleSerialBlob(original.getBytes());
+        return blob.getBytes(1, (int) blob.length());
+      case Types.CLOB:
+        Clob oracleClob = new OracleSerialClob(original.toCharArray());
+        return oracleClob.getSubString(1, (int) oracleClob.length());
+      default:
+        return null;
+    }
+  }
+
+  private Schema getDMLSchema() {
+    List<Schema.Field> schemaFields = new ArrayList<>();
+    schemaFields.add(TABLE_FIELD);
+    schemaFields.add(PRIMARY_KEYS_FIELD);
+    schemaFields.add(OP_TYPE_FIELD);
+    schemaFields.add(Schema.Field.of("change", getChangeSchema()));
+    return Schema.recordOf(RECORD_NAME, schemaFields);
+  }
+
+  private Schema getChangeSchema() {
+    return Schema.recordOf("rec", fieldList);
   }
 
 }
