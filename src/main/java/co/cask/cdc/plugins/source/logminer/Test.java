@@ -1,12 +1,9 @@
 package co.cask.cdc.plugins.source.logminer;
 
-import co.cask.hydrator.plugin.DBUtils;
 import oracle.jdbc.driver.OracleDriver;
 
-import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -57,57 +54,77 @@ public class Test {
     }
 
     try {
-      ResultSet resultSet = connection.prepareStatement("select * from company where 1 = 0").executeQuery();
-      System.out.println(String.format("%s", DBUtils.getSchemaFields(resultSet)));
-    } catch (SQLException ex) {
-      ex.printStackTrace();
-    }
-
-    List<String> redoFiles = new ArrayList<>();
-    PreparedStatement statement = null;
-    try {
-      ResultSet resultSet = connection.createStatement().executeQuery("SELECT distinct member LOGFILENAME FROM V$LOGFILE");
-
-        while (resultSet.next()) {
-          redoFiles.add(resultSet.getString(1));
-        }
-
-      for (String redoFile : redoFiles) {
-        String addFileQuery = String.format("BEGIN DBMS_LOGMNR.ADD_LOGFILE('%s'); END;", redoFile);
-        System.out.println(addFileQuery);
-        CallableStatement callableStatement = connection.prepareCall(addFileQuery);
-        System.out.println(callableStatement.execute());
-      }
-
-      // Start LogMiner
-      // execute DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog);
-      String one = "BEGIN DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog " +
-        "+ DBMS_LOGMNR.COMMITTED_DATA_ONLY + DBMS_LOGMNR.NO_SQL_DELIMITER); END;";
-//      CallableStatement callableStatement = connection.prepareCall(
-//        "BEGIN DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog " +
-//          "+ DBMS_LOGMNR.COMMITTED_DATA_ONLY + DBMS_LOGMNR.NO_SQL_DELIMITER); END;");
-//      System.out.println(callableStatement.execute());
-
-      String stmt = "select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = 'USERS' AND scn " +
-        ">= 4969561 AND 1=1";
-
-      resultSet = connection.createStatement().executeQuery(one+ "\n" + stmt);
-
-
-      while (resultSet.next()) {
-        System.out.println(resultSet.getString("OPERATION"));
-      }
-
-      connection.close();
-
+      System.out.println(getTableSchema("COMPANY", connection));
     } catch (SQLException e) {
       e.printStackTrace();
     }
 
-    System.out.println(redoFiles);
+//    try {
+//      ResultSet resultSet = connection.prepareStatement("select * from company where 1 = 0").executeQuery();
+//      System.out.println(String.format("%s", DBUtils.getSchemaFields(resultSet)));
+//    } catch (SQLException ex) {
+//      ex.printStackTrace();
+//    }
+//
+//    List<String> redoFiles = new ArrayList<>();
+//    PreparedStatement statement = null;
+//    try {
+//      ResultSet resultSet = connection.createStatement().executeQuery("SELECT distinct member LOGFILENAME FROM V$LOGFILE");
+//
+//        while (resultSet.next()) {
+//          redoFiles.add(resultSet.getString(1));
+//        }
+//
+//      for (String redoFile : redoFiles) {
+//        String addFileQuery = String.format("BEGIN DBMS_LOGMNR.ADD_LOGFILE('%s'); END;", redoFile);
+//        System.out.println(addFileQuery);
+//        CallableStatement callableStatement = connection.prepareCall(addFileQuery);
+//        System.out.println(callableStatement.execute());
+//      }
+//
+//      // Start LogMiner
+//      // execute DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog);
+//      String one = "BEGIN DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog " +
+//        "+ DBMS_LOGMNR.COMMITTED_DATA_ONLY + DBMS_LOGMNR.NO_SQL_DELIMITER); END;";
+////      CallableStatement callableStatement = connection.prepareCall(
+////        "BEGIN DBMS_LOGMNR.START_LOGMNR (options => dbms_logmnr.dict_from_online_catalog " +
+////          "+ DBMS_LOGMNR.COMMITTED_DATA_ONLY + DBMS_LOGMNR.NO_SQL_DELIMITER); END;");
+////      System.out.println(callableStatement.execute());
+//
+//      String stmt = "select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = 'USERS' AND scn " +
+//        ">= 4969561 AND 1=1";
+//
+//      resultSet = connection.createStatement().executeQuery(one+ "\n" + stmt);
+//
+//
+//      while (resultSet.next()) {
+//        System.out.println(resultSet.getString("OPERATION"));
+//      }
+//
+//      connection.close();
+//
+//    } catch (SQLException e) {
+//      e.printStackTrace();
+//    }
+//
+//    System.out.println(redoFiles);
 
 
 
+  }
+
+
+  static List<String> getTableSchema(String tableName, Connection connection) throws SQLException {
+    List<String> keys = new ArrayList<>();
+    ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+      "SELECT column_name FROM all_cons_columns WHERE constraint_name = (" +
+        "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER('%s') " +
+        "AND CONSTRAINT_TYPE = 'P')", tableName));
+    while (resultSet.next()) {
+      keys.add(resultSet.getString(1));
+    }
+    connection.close();
+    return keys;
   }
 
 

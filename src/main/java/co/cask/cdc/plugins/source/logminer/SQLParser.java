@@ -11,6 +11,7 @@ import org.apache.calcite.sql.SqlUpdate;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.util.NlsString;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -20,7 +21,7 @@ import java.util.Map;
 /**
  *
  */
-public class SQLParser {
+public class SQLParser implements Serializable {
 
   public Map<String, String> parseSQL(String sqlQuery) throws Exception {
     Map<String, String> dmlFields = new HashMap<>();

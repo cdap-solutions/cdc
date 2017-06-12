@@ -107,10 +107,11 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     Map<String, Integer> fieldTypes = new HashMap<>();
     int columnCount = resultSet.getMetaData().getColumnCount();
     for (int i = 1; i <= columnCount; i++) {
-      String name = resultSet.getMetaData().getCatalogName(i);
+      String name = resultSet.getMetaData().getColumnLabel(i);
       int type = resultSet.getMetaData().getColumnType(i);
       fieldTypes.put(name, type);
     }
+    System.out.println("### table fields: " + fieldTypes);
     return fieldTypes;
   }
 
@@ -119,8 +120,8 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     Connection connection = dbConnection.apply();
     ResultSet resultSet = connection.createStatement().executeQuery(String.format(
       "SELECT column_name FROM all_cons_columns WHERE constraint_name = (" +
-        "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER(‘%s’) " +
-        "AND CONSTRAINT_TYPE = ‘P’);", tableName));
+        "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER('%s') " +
+        "AND CONSTRAINT_TYPE = 'P')", tableName));
     while (resultSet.next()) {
       keys.add(resultSet.getString(1));
     }
@@ -162,7 +163,7 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
                                                              List<Schema.Field> fieldList) throws SQLException {
 
     String stmt = String.format("select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = " +
-                                  "'USERS' AND table_name = %s AND scn > %s AND scn <= %s AND ?=?",
+                                  "'USERS' AND table_name = '%s' AND scn > %s AND scn <= %s AND ?=?",
                                 tableName, prev, cur);
     LOG.info("Querying for change data with statement {}", stmt);
 
