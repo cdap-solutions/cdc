@@ -50,17 +50,17 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
   private String password;
   private String tableName;
   private OracleServerConnection dbConnection;
-  private long scn;
+  private long commitSCN;
 
   ChangeInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
-                     String password, String tableName, long scn) {
+                     String password, String tableName, long commitSCN) {
     super(ssc, tag);
     this.tag = tag;
     this.connection = connection;
     this.username = username;
     this.password = password;
     this.tableName = tableName;
-    this.scn = scn;
+    this.commitSCN = commitSCN;
   }
 
   ChangeInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
@@ -71,19 +71,22 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     this.username = username;
     this.password = password;
     // if not current tracking version is given initialize it to 0
-    this.scn = 0;
+    this.commitSCN = 0;
   }
 
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
 
     try {
-      long prev = scn;
-      long cur = getCurrentSCN(dbConnection);
+      long prev = commitSCN;
+      long cur = getCurrentCommitSCN(dbConnection);
+      if (prev == cur) {
+        return Option.apply(ssc().sc().emptyRDD(tag).toJavaRDD().rdd());
+      }
       List<String> primaryKeys = getPrimaryKeys(tableName, dbConnection);
       List<Schema.Field> fieldList = getFieldList(tableName, dbConnection);
       JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur, primaryKeys, fieldList);
-      scn = cur;
+      commitSCN = cur;
       return Option.apply(changes.toJavaRDD().rdd());
     } catch (SQLException e) {
       e.printStackTrace();
@@ -126,13 +129,13 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     return keys;
   }
 
-  private long getCurrentSCN(OracleServerConnection dbConnection) throws SQLException {
+  private long getCurrentCommitSCN(OracleServerConnection dbConnection) throws SQLException {
     Connection connection = dbConnection.apply();
-    ResultSet resultSet = connection.createStatement().executeQuery("SELECT CURRENT_SCN FROM V$DATABASE");
+    ResultSet resultSet = connection.createStatement().executeQuery("select MAX(COMMIT_SCN) from v$logmnr_contents WHERE table_space = 'USERS'");
     long changeVersion = 0;
     while (resultSet.next()) {
       changeVersion = resultSet.getLong(1);
-      LOG.info("Current scn is {}", changeVersion);
+      LOG.info("Current commitSCN is {}", changeVersion);
     }
     connection.close();
     return changeVersion;
@@ -159,7 +162,7 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
                                                              List<Schema.Field> fieldList) throws SQLException {
 
     String stmt = String.format("select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = " +
-                                  "'USERS' AND table_name = '%s' AND scn > %s AND scn <= %s AND ?=?",
+                                  "'USERS' AND table_name = '%s' AND COMMIT_SCN > %s AND COMMIT_SCN <= %s AND ?=?",
                                 tableName, prev, cur);
     LOG.info("Querying for change data with statement {}", stmt);
 
