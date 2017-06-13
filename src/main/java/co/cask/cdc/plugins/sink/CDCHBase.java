@@ -217,13 +217,13 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
         for (Schema.Field field : fields) {
           setPutField(put, field, change.get(field.getName()));
         }
-        table.put(put);
         LOG.info("XXX Putting row {}", Bytes.toString(getRowKey(primaryKeys, change)));
+        table.put(put);
         break;
       case "D":
         Delete delete = new Delete(getRowKey(primaryKeys, change));
-        table.delete(delete);
         LOG.info("XXX Deleting row {}", Bytes.toString(getRowKey(primaryKeys, change)));
+        table.delete(delete);
         break;
       default:
         LOG.warn(String.format("Operation of type '%s' will be ignored.", operationType));

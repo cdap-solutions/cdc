@@ -80,11 +80,9 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     try {
       long prev = scn;
       long cur = getCurrentSCN(dbConnection);
-//      setUpLogMiner(dbConnection.apply());
       List<String> primaryKeys = getPrimaryKeys(tableName, dbConnection);
       List<Schema.Field> fieldList = getFieldList(tableName, dbConnection);
-      Map<String, Integer> fieldTypes = getTableFields(tableName, dbConnection);
-      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur, primaryKeys, fieldTypes, fieldList);
+      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur, primaryKeys, fieldList);
       scn = cur;
       return Option.apply(changes.toJavaRDD().rdd());
     } catch (SQLException e) {
@@ -107,7 +105,7 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     Map<String, Integer> fieldTypes = new HashMap<>();
     int columnCount = resultSet.getMetaData().getColumnCount();
     for (int i = 1; i <= columnCount; i++) {
-      String name = resultSet.getMetaData().getCatalogName(i);
+      String name = resultSet.getMetaData().getColumnLabel(i);
       int type = resultSet.getMetaData().getColumnType(i);
       fieldTypes.put(name, type);
     }
@@ -119,8 +117,8 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     Connection connection = dbConnection.apply();
     ResultSet resultSet = connection.createStatement().executeQuery(String.format(
       "SELECT column_name FROM all_cons_columns WHERE constraint_name = (" +
-        "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER(‘%s’) " +
-        "AND CONSTRAINT_TYPE = ‘P’);", tableName));
+        "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER('%s') " +
+        "AND CONSTRAINT_TYPE = 'P')", tableName));
     while (resultSet.next()) {
       keys.add(resultSet.getString(1));
     }
@@ -158,17 +156,16 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
 
 
   private JdbcRDD<StructuredRecord> queryLogMinerViewContent(long prev, long cur, List<String> primaryKeys,
-                                                             Map<String, Integer> fieldTypes,
                                                              List<Schema.Field> fieldList) throws SQLException {
 
     String stmt = String.format("select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = " +
-                                  "'USERS' AND table_name = %s AND scn > %s AND scn <= %s AND ?=?",
+                                  "'USERS' AND table_name = '%s' AND scn > %s AND scn <= %s AND ?=?",
                                 tableName, prev, cur);
     LOG.info("Querying for change data with statement {}", stmt);
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
     return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, 1, 1, 1,
-                         new ResultSetToDMLRecord(tableName, primaryKeys, fieldTypes, fieldList),
+                         new ResultSetToDMLRecord(tableName, primaryKeys, fieldList),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
     // Set the given SCN or find out the last one used or get the latest one.
     // SELECT CURRENT_SCN FROM V$DATABASE; --> to get the latest one

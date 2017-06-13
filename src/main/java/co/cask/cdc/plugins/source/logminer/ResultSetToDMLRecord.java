@@ -18,16 +18,11 @@ package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
-import oracle.jdbc.rowset.OracleSerialBlob;
-import oracle.jdbc.rowset.OracleSerialClob;
+import co.cask.cdap.format.StructuredRecordStringConverter;
 import scala.Serializable;
 import scala.runtime.AbstractFunction1;
 
-import java.sql.Blob;
-import java.sql.Clob;
 import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -43,17 +38,14 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
 
   private final String tableName;
   private final List<String> primaryKeys;
-  private final Map<String, Integer> fieldTypes;
   private final List<Schema.Field> fieldList;
 
-  static final String RECORD_NAME = "DMLRecord";
+  private static final String RECORD_NAME = "DMLRecord";
   private final SQLParser sqlParser = new SQLParser();
 
-  public ResultSetToDMLRecord(String tableName, List<String> primaryKeys,
-                              Map<String, Integer> fieldTypes, List<Schema.Field> fieldList) {
+  ResultSetToDMLRecord(String tableName, List<String> primaryKeys, List<Schema.Field> fieldList) {
     this.tableName = tableName;
     this.primaryKeys = primaryKeys;
-    this.fieldTypes = fieldTypes;
     this.fieldList = fieldList;
   }
 
@@ -70,7 +62,8 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     Schema dmlSchema = getDMLSchema();
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(dmlSchema);
-    recordBuilder.set(TABLE_FIELD.getName(), tableName);
+    // TODO: sink expects schema.tablename
+    recordBuilder.set(TABLE_FIELD.getName(), "USER." + tableName);
     recordBuilder.set(PRIMARY_KEYS_FIELD.getName(), primaryKeys);
     recordBuilder.set(OP_TYPE_FIELD.getName(), getOpType(resultSet.getString("OPERATION")));
     return getChangeData(resultSet, changeSchema, recordBuilder);
@@ -98,39 +91,15 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     String sql_redo = resultSet.getString("SQL_REDO");
     Map<String, String> dataFields = sqlParser.parseSQL(sql_redo);
 
-    for (Map.Entry<String, Integer> fieldType : fieldTypes.entrySet()) {
-      String fieldName = fieldType.getKey();
-      Integer sqlType = fieldType.getValue();
-      changeRecordBuilder.set(fieldName, transformValue(sqlType, dataFields.get(fieldName)));
+    for (int i = 0; i < changeSchema.getFields().size(); i++) {
+      String fieldName = changeSchema.getFields().get(i).getName();
+      // all the values have '' so get rid of them
+      // TODO: Convert and set will not support BLOB and CLOB. Change this to the one in Databaset
+      changeRecordBuilder.convertAndSet(fieldName, dataFields.get(fieldName).replaceAll("^'|'$", ""));
     }
     StructuredRecord changeRecord = changeRecordBuilder.build();
     recordBuilder.set("change", changeRecord);
     return recordBuilder.build();
-  }
-
-  private Object transformValue(Integer sqlColumnType, String original) throws SQLException {
-    switch (sqlColumnType) {
-      case Types.SMALLINT:
-      case Types.TINYINT:
-        return Integer.valueOf(original);
-      case Types.NUMERIC:
-      case Types.DECIMAL:
-        return Double.valueOf(original);
-      case Types.DATE:
-        return Long.valueOf(original);
-      case Types.TIME:
-        return Long.valueOf(original);
-      case Types.TIMESTAMP:
-        return Long.valueOf(original);
-      case Types.BLOB:
-        Blob blob = new OracleSerialBlob(original.getBytes());
-        return blob.getBytes(1, (int) blob.length());
-      case Types.CLOB:
-        Clob oracleClob = new OracleSerialClob(original.toCharArray());
-        return oracleClob.getSubString(1, (int) oracleClob.length());
-      default:
-        return null;
-    }
   }
 
   private Schema getDMLSchema() {
