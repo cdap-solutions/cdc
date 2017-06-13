@@ -18,6 +18,8 @@ package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
+import co.cask.cdap.format.StructuredRecordStringConverter;
+import com.google.gson.Gson;
 import oracle.jdbc.rowset.OracleSerialBlob;
 import oracle.jdbc.rowset.OracleSerialClob;
 import scala.Serializable;
@@ -47,6 +49,7 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   private final List<Schema.Field> fieldList;
 
   static final String RECORD_NAME = "DMLRecord";
+  private static Gson GSON = new Gson();
   private final SQLParser sqlParser = new SQLParser();
 
   public ResultSetToDMLRecord(String tableName, List<String> primaryKeys,
@@ -70,10 +73,13 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     Schema dmlSchema = getDMLSchema();
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(dmlSchema);
-    recordBuilder.set(TABLE_FIELD.getName(), tableName);
+    recordBuilder.set(TABLE_FIELD.getName(), "USER." + tableName);
     recordBuilder.set(PRIMARY_KEYS_FIELD.getName(), primaryKeys);
     recordBuilder.set(OP_TYPE_FIELD.getName(), getOpType(resultSet.getString("OPERATION")));
-    return getChangeData(resultSet, changeSchema, recordBuilder);
+    StructuredRecord changeData = getChangeData(resultSet, changeSchema, recordBuilder);
+    System.out.println("### emiting: " + StructuredRecordStringConverter.toJsonString(changeData));
+    return changeData;
+
   }
 
   private String getOpType(String fromDB) {
@@ -101,7 +107,9 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     for (Map.Entry<String, Integer> fieldType : fieldTypes.entrySet()) {
       String fieldName = fieldType.getKey();
       Integer sqlType = fieldType.getValue();
-      changeRecordBuilder.set(fieldName, transformValue(sqlType, dataFields.get(fieldName)));
+      System.out.println("Field name is " + fieldName);
+      System.out.println("Change schema is " + fieldList);
+      changeRecordBuilder.set(fieldName, transformValue(sqlType, dataFields.get(fieldName).replaceAll("^'|'$", "")));
     }
     StructuredRecord changeRecord = changeRecordBuilder.build();
     recordBuilder.set("change", changeRecord);
@@ -109,6 +117,7 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   }
 
   private Object transformValue(Integer sqlColumnType, String original) throws SQLException {
+    System.out.println("### Parsing value: " + original);
     switch (sqlColumnType) {
       case Types.SMALLINT:
       case Types.TINYINT:
