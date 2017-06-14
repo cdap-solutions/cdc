@@ -40,14 +40,12 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   private static final Schema.Field PRIMARY_KEYS_FIELD = Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING)));
   private static final Schema.Field OP_TYPE_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
 
-  private final Set<String> trackedTables;
   private final OracleServerConnection dbConnection;
 
   private static final String RECORD_NAME = "DMLRecord";
   private final SQLParser sqlParser = new SQLParser();
 
-  public ResultSetToDMLRecord(Set<String> trackedTables, OracleServerConnection dbConnection) {
-    this.trackedTables = trackedTables;
+  public ResultSetToDMLRecord(OracleServerConnection dbConnection) {
     this.dbConnection = dbConnection;
   }
 

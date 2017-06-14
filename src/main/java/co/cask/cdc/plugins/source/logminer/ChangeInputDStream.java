@@ -121,7 +121,7 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
     return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, 1, 1, 1,
-                         new ResultSetToDMLRecord(trackedTables, dbConnection),
+                         new ResultSetToDMLRecord(dbConnection),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
     // Set the given SCN or find out the last one used or get the latest one.
     // SELECT CURRENT_SCN FROM V$DATABASE; --> to get the latest one
