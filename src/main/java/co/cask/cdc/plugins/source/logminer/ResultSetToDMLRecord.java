@@ -18,14 +18,18 @@ package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
-import co.cask.cdap.format.StructuredRecordStringConverter;
+import co.cask.hydrator.plugin.DBUtils;
 import scala.Serializable;
 import scala.runtime.AbstractFunction1;
 
+import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A serializable class to allow invoking {@link scala.Function1} from Java. The function converts {@link ResultSet}
@@ -36,17 +40,15 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   private static final Schema.Field PRIMARY_KEYS_FIELD = Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING)));
   private static final Schema.Field OP_TYPE_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
 
-  private final String tableName;
-  private final List<String> primaryKeys;
-  private final List<Schema.Field> fieldList;
+  private final Set<String> trackedTables;
+  private final OracleServerConnection dbConnection;
 
   private static final String RECORD_NAME = "DMLRecord";
   private final SQLParser sqlParser = new SQLParser();
 
-  ResultSetToDMLRecord(String tableName, List<String> primaryKeys, List<Schema.Field> fieldList) {
-    this.tableName = tableName;
-    this.primaryKeys = primaryKeys;
-    this.fieldList = fieldList;
+  public ResultSetToDMLRecord(Set<String> trackedTables, OracleServerConnection dbConnection) {
+    this.trackedTables = trackedTables;
+    this.dbConnection = dbConnection;
   }
 
   public StructuredRecord apply(ResultSet row) {
@@ -58,11 +60,14 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   }
 
   private StructuredRecord resultSetToStructureRecord(ResultSet resultSet) throws Exception {
-    Schema changeSchema = getChangeSchema();
-    Schema dmlSchema = getDMLSchema();
+    String tableName = resultSet.getString("TABLE_NAME");
+    Schema changeSchema = getChangeSchema(tableName);
+    Schema dmlSchema = getDMLSchema(tableName);
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(dmlSchema);
     // TODO: sink expects schema.tablename
+
+    List<String> primaryKeys = getPrimaryKeys(tableName);
     recordBuilder.set(TABLE_FIELD.getName(), "USER." + tableName);
     recordBuilder.set(PRIMARY_KEYS_FIELD.getName(), primaryKeys);
     recordBuilder.set(OP_TYPE_FIELD.getName(), getOpType(resultSet.getString("OPERATION")));
@@ -102,17 +107,54 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     return recordBuilder.build();
   }
 
-  private Schema getDMLSchema() {
+  private Schema getDMLSchema(String tableName) throws SQLException {
     List<Schema.Field> schemaFields = new ArrayList<>();
     schemaFields.add(TABLE_FIELD);
     schemaFields.add(PRIMARY_KEYS_FIELD);
     schemaFields.add(OP_TYPE_FIELD);
-    schemaFields.add(Schema.Field.of("change", getChangeSchema()));
+    schemaFields.add(Schema.Field.of("change", getChangeSchema(tableName)));
     return Schema.recordOf(RECORD_NAME, schemaFields);
   }
 
-  private Schema getChangeSchema() {
-    return Schema.recordOf("rec", fieldList);
+  private Schema getChangeSchema(String tableName) throws SQLException {
+    return Schema.recordOf("rec", getFieldList(tableName));
   }
 
+  private List<Schema.Field> getFieldList(String tableName) throws SQLException {
+    try (Connection connection = dbConnection.apply()) {
+      ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+        "SELECT * FROM %s WHERE 1 = 0", tableName));
+      return DBUtils.getSchemaFields(resultSet);
+    }
+  }
+
+  // DO not remove this as its needed to get BLOB and other complex field types
+  private Map<String, Integer> getTableFields(String tableName, OracleServerConnection dbConnection) throws SQLException {
+    try (Connection connection = dbConnection.apply()) {
+      ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+        "SELECT * FROM %s WHERE 1 = 0", tableName));
+      Map<String, Integer> fieldTypes = new HashMap<>();
+      int columnCount = resultSet.getMetaData().getColumnCount();
+      for (int i = 1; i <= columnCount; i++) {
+        String name = resultSet.getMetaData().getColumnLabel(i);
+        int type = resultSet.getMetaData().getColumnType(i);
+        fieldTypes.put(name, type);
+      }
+      return fieldTypes;
+    }
+  }
+
+  private List<String> getPrimaryKeys(String tableName) throws SQLException {
+    try (Connection connection = dbConnection.apply()) {
+      List<String> keys = new ArrayList<>();
+      ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+        "SELECT column_name FROM all_cons_columns WHERE constraint_name = (" +
+          "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER('%s') " +
+          "AND CONSTRAINT_TYPE = 'P')", tableName));
+      while (resultSet.next()) {
+        keys.add(resultSet.getString(1));
+      }
+      return keys;
+    }
+  }
 }

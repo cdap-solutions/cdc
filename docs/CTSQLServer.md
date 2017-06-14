@@ -48,7 +48,7 @@ Refer [Enable Change Tracking for a Database](https://docs.microsoft.com/en-us/s
 Change Tracking SQL Server Streaming Source will sync all the tables in a database which has change tracking enabled. 
 Change Tracking can ge enabled for a table by:
 
-> ALTER TABLE tableName ENABLE CHANGE_TRACKING WITH (TRACK_COLUMNS_UPDATED = OFF)
+> ALTER TABLE trackedTables ENABLE CHANGE_TRACKING WITH (TRACK_COLUMNS_UPDATED = OFF)
 
 Refer [Enable Change Tracking for a Table](https://docs.microsoft.com/en-us/sql/relational-databases/track-changes/enable-and-disable-change-tracking-sql-server#enable-change-tracking-for-a-table) for more details.
 

@@ -23,6 +23,7 @@ import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.etl.api.streaming.StreamingContext;
 import co.cask.cdap.etl.api.streaming.StreamingSource;
 import co.cask.cdc.plugins.source.ReferenceStreamingSource;
+import com.google.common.collect.Sets;
 import oracle.jdbc.driver.OracleDriver;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.slf4j.Logger;
@@ -32,6 +33,7 @@ import scala.reflect.ClassTag;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.Set;
 
 /**
  *
@@ -68,7 +70,7 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
       JavaDStream<StructuredRecord> changeDStream =
         JavaDStream.fromDStream(new ChangeInputDStream(streamingContext.getSparkStreamingContext().ssc(), tag,
                                                        getConnectionString(), conf.username, conf.password,
-                                                       conf.tableName, conf.startSCN), tag);
+                                                       getTableNames(conf.tableNames), conf.startSCN), tag);
 
 
       JavaDStream<Long> count = changeDStream.count();
@@ -84,6 +86,11 @@ public class OracleLogMiner extends ReferenceStreamingSource<StructuredRecord> {
         connection.close();
       }
     }
+  }
+
+  private Set<String> getTableNames(String tableNames) {
+    String[] split = tableNames.split(",");
+    return Sets.newHashSet(split);
   }
 
   private String getConnectionString() {

@@ -34,7 +34,7 @@ public class ConnectionConfig extends ReferencePluginConfig {
   public static final String PASSWORD = "password";
   public static final String DATABASE_NAME = "dbname";
   public static final String START_SCN = "startSCN";
-  public static final String TABLE_NAME = "tableName";
+  public static final String TABLE_NAMES = "tableNames";
 
   @Name(HOST_NAME)
   @Description("Oracle Server Host Name.")
@@ -62,11 +62,11 @@ public class ConnectionConfig extends ReferencePluginConfig {
   @Macro
   public String password;
 
-  @Name(TABLE_NAME)
-  @Description("Table Name for which CDC needs to be captured.")
+  @Name(TABLE_NAMES)
+  @Description("A comma separated list of Table Names for which CDC needs to be captured.")
   @Nullable
   @Macro
-  public String tableName;
+  public String tableNames;
 
   @Name(START_SCN)
   @Description("SCN to start from. Defaults to the latest SCN.")
