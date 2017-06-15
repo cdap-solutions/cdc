@@ -2,11 +2,13 @@ package co.cask.cdc.plugins.source.sqlserver;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
+import co.cask.cdap.format.StructuredRecordStringConverter;
 import co.cask.hydrator.plugin.DBUtils;
 import com.google.common.base.Joiner;
 import scala.Serializable;
 import scala.runtime.AbstractFunction1;
 
+import java.io.IOException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
@@ -24,7 +26,7 @@ public class ResultSetToDDLRecord extends AbstractFunction1<ResultSet, Structure
   private final String schemaName;
   private final String tableName;
 
-  ResultSetToDDLRecord(String schemaName, String tableName) {
+  public ResultSetToDDLRecord(String schemaName, String tableName) {
     this.schemaName = schemaName;
     this.tableName = tableName;
   }
@@ -32,16 +34,20 @@ public class ResultSetToDDLRecord extends AbstractFunction1<ResultSet, Structure
   public StructuredRecord apply(ResultSet row) {
     try {
       return transform(row);
-    } catch (SQLException e) {
+    } catch (Exception e) {
       throw new RuntimeException(e);
     }
   }
 
-  private StructuredRecord transform(ResultSet resultSet) throws SQLException {
+  private StructuredRecord transform(ResultSet resultSet) throws SQLException, IOException {
     Schema tableSchema = Schema.recordOf("schema", DBUtils.getSchemaFields(resultSet));
+    System.out.println("### the schema " + tableSchema);
     StructuredRecord.Builder builder = StructuredRecord.builder(DDL_SCHEMA);
     builder.set("table", Joiner.on(".").join(schemaName, tableName));
     builder.set("schema", tableSchema.toString());
-    return builder.build();
+    StructuredRecord build = builder.build();
+    System.out.println("###DDL Emit: " + StructuredRecordStringConverter.toJsonString(build));
+    return build;
+
   }
 }

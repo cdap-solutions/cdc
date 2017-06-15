@@ -17,6 +17,7 @@
 package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
+import co.cask.cdc.plugins.source.sqlserver.ResultSetToDDLRecord;
 import com.google.common.base.Throwables;
 import org.apache.spark.rdd.JdbcRDD;
 import org.apache.spark.rdd.RDD;
@@ -26,12 +27,15 @@ import org.apache.spark.streaming.dstream.InputDStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Option;
+import scala.collection.JavaConversions;
 import scala.reflect.ClassManifestFactory$;
 import scala.reflect.ClassTag;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -66,17 +70,35 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
 
+    // get the table information of all tables which have ct enabled.
+
+    List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
+
+    // Get the schema of tables. We get the schema of tables every microbatch because we want to update  the downstream
+    // dataset with the DDL changes if any.
+    for (String tableInformation : trackedTables) {
+      changeRDDs.add(getColumnns(tableInformation));
+    }
+
     try {
       long prev = commitSCN;
       long cur = getCurrentCommitSCN(dbConnection);
-      if (prev == cur) {
-        return Option.apply(ssc().sc().emptyRDD(tag).toJavaRDD().rdd());
+      if (prev != cur) {
+        JdbcRDD<StructuredRecord> rdd = queryLogMinerViewContent(prev, cur);
+        changeRDDs.add(rdd);
+        commitSCN = cur;
+      } else {
+        changeRDDs.add(ssc().sc().emptyRDD(tag));
       }
 //      List<String> primaryKeys = getPrimaryKeys(trackedTables, dbConnection);
 //      List<Schema.Field> fieldList = getFieldList(trackedTables, dbConnection);
-      JdbcRDD<StructuredRecord> changes = queryLogMinerViewContent(prev, cur);
-      commitSCN = cur;
-      return Option.apply(changes.toJavaRDD().rdd());
+
+//      return Option.apply(changes.toJavaRDD().rdd());
+
+
+      // update the tracking version
+      RDD<StructuredRecord> changes = ssc().sc().union(JavaConversions.asScalaBuffer(changeRDDs), tag);
+      return Option.apply(changes);
     } catch (SQLException e) {
       e.printStackTrace();
       throw Throwables.propagate(e);
@@ -134,6 +156,15 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     // Get the SQL query from the sql_redo column and use the PL/SQL Parser to parse the sql string and get the columns.
 
     // Persist the last SCN in our StateStore so that we can query from that point onwards in our next run.
+  }
+
+  private JdbcRDD<StructuredRecord> getColumnns(String tableName) {
+    String stmt = String.format("SELECT * FROM %s WHERE ROWNUM = 1 AND ?=?", tableName);
+    LOG.info("Querying with {}", stmt);
+
+    return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, 1, 1, 1,
+                         new ResultSetToDDLRecord("USER", tableName),
+                         ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }
 
   private String getTableNameQuery() {

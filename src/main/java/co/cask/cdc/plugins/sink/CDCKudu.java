@@ -368,7 +368,7 @@ public class CDCKudu extends SparkSink<StructuredRecord> {
 
           while (structuredRecordIterator.hasNext()) {
             StructuredRecord input = structuredRecordIterator.next();
-            LOG.debug("Received StructuredRecord in Kudu {}", StructuredRecordStringConverter.toJsonString(input));
+            LOG.info("Received StructuredRecord in Kudu {}", StructuredRecordStringConverter.toJsonString(input));
             if (input.getSchema().getRecordName().equals("DDLRecord")) {
               if (updateKuduTableSchema(client, input)) {
                 // Schema for the table is updated. Flush the session now
