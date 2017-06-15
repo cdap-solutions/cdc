@@ -88,7 +88,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <cdap.version>4.2.0</cdap.version>
     <hydrator.version>1.7.0</hydrator.version>
-    <spark.version>1.6.1</spark.version>
+    <spark.version>2.1.0</spark.version>
     <commons.version>1.2</commons.version>
     <avro.version>1.8.1</avro.version>
     <kudu.version>1.2.0-cdh5.10.0</kudu.version>
@@ -206,13 +206,13 @@
     </dependency>
     <dependency>
       <groupId>org.apache.spark</groupId>
-      <artifactId>spark-streaming_2.10</artifactId>
+      <artifactId>spark-streaming_2.11</artifactId>
       <version>${spark.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.spark</groupId>
-      <artifactId>spark-core_2.10</artifactId>
+      <artifactId>spark-core_2.11</artifactId>
       <version>${spark.version}</version>
       <scope>provided</scope>
       <exclusions>
