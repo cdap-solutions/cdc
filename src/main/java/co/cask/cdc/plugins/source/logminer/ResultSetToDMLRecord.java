@@ -42,7 +42,7 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
 
   private final OracleServerConnection dbConnection;
 
-  private static final String RECORD_NAME = "DMLRecord";
+  public static final String RECORD_NAME = "DMLRecord";
   private final SQLParser sqlParser = new SQLParser();
 
   public ResultSetToDMLRecord(OracleServerConnection dbConnection) {
