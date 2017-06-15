@@ -2,6 +2,7 @@ package co.cask.cdc.plugins.source.sqlserver;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
+import co.cask.cdc.plugins.common.Constants;
 import co.cask.hydrator.plugin.DBUtils;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
@@ -19,13 +20,10 @@ import java.util.List;
  * to {@link StructuredRecord} for dml records
  */
 public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
-  private static final Schema.Field TABLE_SCHEMA_FIELD = Schema.Field.of("table", Schema.of(Schema.Type.STRING));
-  private static final Schema.Field PRIMARY_KEYS_SCHEMA_FIELD = Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING)));
-  private static final Schema.Field OP_TYPE_SCHEMA_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
+
   private static final int CHANGE_TABLE_COLUMNS_SIZE = 3;
   private final TableInformation tableInformation;
 
-  static final String RECORD_NAME = "DMLRecord";
 
   ResultSetToDMLRecord(TableInformation tableInformation) {
     this.tableInformation = tableInformation;
@@ -44,10 +42,11 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     Schema dmlSchema = getDMLSchema(changeSchema);
 
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(dmlSchema);
-    recordBuilder.set(TABLE_SCHEMA_FIELD.getName(), Joiner.on(".").join(tableInformation.getSchemaName(),
-                                                                        tableInformation.getName()));
-    recordBuilder.set(PRIMARY_KEYS_SCHEMA_FIELD.getName(), Lists.newArrayList(tableInformation.getPrimaryKeys()));
-    recordBuilder.set(OP_TYPE_SCHEMA_FIELD.getName(), resultSet.getString("SYS_CHANGE_OPERATION"));
+    recordBuilder.set(Constants.DMLRecord.TABLE_SCHEMA_FIELD.getName(), Joiner.on(".").join(tableInformation
+                                                                                              .getSchemaName(),
+                                                                                            tableInformation.getName()));
+    recordBuilder.set(Constants.DMLRecord.PRIMARY_KEYS_SCHEMA_FIELD.getName(), Lists.newArrayList(tableInformation.getPrimaryKeys()));
+    recordBuilder.set(Constants.DMLRecord.OP_TYPE_SCHEMA_FIELD.getName(), resultSet.getString("SYS_CHANGE_OPERATION"));
     return getChangeData(resultSet, changeSchema, recordBuilder);
   }
 
@@ -67,11 +66,11 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
 
   private Schema getDMLSchema(Schema changeSchema) {
     List<Schema.Field> schemaFields = new ArrayList<>();
-    schemaFields.add(TABLE_SCHEMA_FIELD);
-    schemaFields.add(PRIMARY_KEYS_SCHEMA_FIELD);
-    schemaFields.add(OP_TYPE_SCHEMA_FIELD);
+    schemaFields.add(Constants.DMLRecord.TABLE_SCHEMA_FIELD);
+    schemaFields.add(Constants.DMLRecord.PRIMARY_KEYS_SCHEMA_FIELD);
+    schemaFields.add(Constants.DMLRecord.OP_TYPE_SCHEMA_FIELD);
     schemaFields.add(Schema.Field.of("change", changeSchema));
-    return Schema.recordOf(RECORD_NAME, schemaFields);
+    return Schema.recordOf(Constants.DMLRecord.RECORD_NAME, schemaFields);
   }
 
   private Schema getChangeSchema(ResultSet resultSet) throws SQLException {

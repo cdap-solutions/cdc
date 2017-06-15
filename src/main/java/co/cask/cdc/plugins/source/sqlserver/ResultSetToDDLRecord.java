@@ -3,6 +3,7 @@ package co.cask.cdc.plugins.source.sqlserver;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.format.StructuredRecordStringConverter;
+import co.cask.cdc.plugins.common.Constants;
 import co.cask.hydrator.plugin.DBUtils;
 import com.google.common.base.Joiner;
 import scala.Serializable;
@@ -17,11 +18,6 @@ import java.sql.SQLException;
  * to {@link StructuredRecord} for DDL i.e. schema changes
  */
 public class ResultSetToDDLRecord extends AbstractFunction1<ResultSet, StructuredRecord> implements Serializable {
-
-  private static final String RECORD_NAME = "DDLRecord";
-  private static final Schema DDL_SCHEMA = Schema.recordOf(RECORD_NAME,
-                                                           Schema.Field.of("table", Schema.of(Schema.Type.STRING)),
-                                                           Schema.Field.of("schema", Schema.of(Schema.Type.STRING)));
 
   private final String schemaName;
   private final String tableName;
@@ -42,7 +38,7 @@ public class ResultSetToDDLRecord extends AbstractFunction1<ResultSet, Structure
   private StructuredRecord transform(ResultSet resultSet) throws SQLException, IOException {
     Schema tableSchema = Schema.recordOf("schema", DBUtils.getSchemaFields(resultSet));
     System.out.println("### the schema " + tableSchema);
-    StructuredRecord.Builder builder = StructuredRecord.builder(DDL_SCHEMA);
+    StructuredRecord.Builder builder = StructuredRecord.builder(Constants.DDLRecord.DDL_SCHEMA);
     builder.set("table", Joiner.on(".").join(schemaName, tableName));
     builder.set("schema", tableSchema.toString());
     StructuredRecord build = builder.build();
