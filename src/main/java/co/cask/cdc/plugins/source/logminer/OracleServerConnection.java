@@ -63,6 +63,9 @@ class OracleServerConnection extends AbstractFunction0<Connection> implements Se
       properties.setProperty("user", userName);
       properties.setProperty("password", password);
       System.out.println("### Hash is " +  System.identityHashCode(this));
+      for(int i = 0; i < 4; i ++) {
+        System.out.println(Thread.currentThread().getStackTrace()[i]);
+      }
       System.out.println("### Apply called " +  ++count);
       Connection connection = DriverManager.getConnection(connectionUrl, properties);
       // this might not be here. debugging....

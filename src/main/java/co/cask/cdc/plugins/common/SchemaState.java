@@ -1,8 +1,8 @@
 package co.cask.cdc.plugins.common;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
+import com.google.common.base.Optional;
 import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFunction;
@@ -78,7 +78,7 @@ public class SchemaState implements Serializable {
 
   public static class SchemaStateFunction implements Function3<String, Optional<StructuredRecord>,
 
-    State<Map<String, String>>, Tuple2<StructuredRecord, Boolean>> {
+      State<Map<String, String>>, Tuple2<StructuredRecord, Boolean>> {
 
     @Override
     public Tuple2<StructuredRecord, Boolean> call(String v1, Optional<StructuredRecord> value, State<Map<String, String>>

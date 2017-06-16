@@ -17,7 +17,9 @@
 package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
+import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdc.plugins.source.sqlserver.ResultSetToDDLRecord;
+import co.cask.hydrator.plugin.DBUtils;
 import com.google.common.base.Throwables;
 import org.apache.spark.rdd.JdbcRDD;
 import org.apache.spark.rdd.RDD;
@@ -33,9 +35,13 @@ import scala.reflect.ClassTag;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -70,29 +76,34 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
   @Override
   public Option<RDD<StructuredRecord>> compute(Time validTime) {
 
-    // get the table information of all tables which have ct enabled.
+    try (Connection connection = new OracleServerConnection(connectionUrl, username, password).apply()) {
 
-    List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
+      Map<String, TableInformation> tableInformations = new HashMap<>();
 
-    // Get the schema of tables. We get the schema of tables every microbatch because we want to update  the downstream
-    // dataset with the DDL changes if any.
-    for (String tableInformation : trackedTables) {
-      changeRDDs.add(getColumnns(tableInformation));
-    }
+      // get the table information of all tables which have ct enabled.
 
-    try {
+      List<RDD<StructuredRecord>> changeRDDs = new LinkedList<>();
+      // Get the schema of tables. We get the schema of tables every microbatch because we want to update  the downstream
+      // dataset with the DDL changes if any.
+      for (String tableName : trackedTables) {
+        changeRDDs.add(getColumnns(tableName));
+        tableInformations.put(tableName, getTableInformation(connection, tableName));
+      }
       long prev = commitSCN;
-      OracleServerConnection connection = new OracleServerConnection(this.connectionUrl, username, password, true);
-      long cur = getCurrentCommitSCN(connection);
+      long cur;
+      try (Connection logMinnerConnection = new OracleServerConnection(connectionUrl, username, password, true).apply()) {
+        cur = getCurrentCommitSCN(logMinnerConnection);
+        connection.close();
+      }
+
       if (prev != cur) {
-        JdbcRDD<StructuredRecord> rdd = queryLogMinerViewContent(prev, cur);
+        JdbcRDD<StructuredRecord> rdd = queryLogMinerViewContent(prev, cur, tableInformations);
         changeRDDs.add(rdd);
         commitSCN = cur;
       } else {
         changeRDDs.add(ssc().sc().emptyRDD(tag));
       }
-//      List<String> primaryKeys = getPrimaryKeys(trackedTables, dbConnection);
-//      List<Schema.Field> fieldList = getFieldList(trackedTables, dbConnection);
+
 
 //      return Option.apply(changes.toJavaRDD().rdd());
 
@@ -100,21 +111,19 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
       // update the tracking version
       RDD<StructuredRecord> changes = ssc().sc().union(JavaConversions.asScalaBuffer(changeRDDs), tag);
       return Option.apply(changes);
-    } catch (SQLException e) {
-      e.printStackTrace();
+    } catch (Throwable e) {
+      LOG.info("Got exception", e);
       throw Throwables.propagate(e);
     }
   }
 
-  private long getCurrentCommitSCN(OracleServerConnection dbConnection) throws SQLException {
-    Connection connection = dbConnection.apply();
+  private long getCurrentCommitSCN(Connection connection) throws SQLException {
     ResultSet resultSet = connection.createStatement().executeQuery("select MAX(COMMIT_SCN) from v$logmnr_contents WHERE table_space = 'USERS'");
     long changeVersion = 0;
     while (resultSet.next()) {
       changeVersion = resultSet.getLong(1);
       LOG.info("Current commitSCN is {}", changeVersion);
     }
-    connection.close();
     return changeVersion;
   }
 
@@ -135,7 +144,9 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
   }
 
 
-  private JdbcRDD<StructuredRecord> queryLogMinerViewContent(long prev, long cur) throws SQLException {
+  private JdbcRDD<StructuredRecord> queryLogMinerViewContent(long prev, long cur, Map<String, TableInformation>
+    tableInformations) throws
+    SQLException {
 
     String stmt = String.format("select operation, table_name, sql_redo from v$logmnr_contents WHERE table_space = " +
                                   "'USERS' AND %s AND COMMIT_SCN > %s AND COMMIT_SCN <= %s AND ?=?",
@@ -144,7 +155,7 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
     return new JdbcRDD<>(ssc().sc(), new OracleServerConnection(connectionUrl, username, password, true), stmt, 1, 1, 1,
-                         new ResultSetToDMLRecord(connectionUrl, username, password),
+                         new ResultSetToDMLRecord(tableInformations),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
     // Set the given SCN or find out the last one used or get the latest one.
     // SELECT CURRENT_SCN FROM V$DATABASE; --> to get the latest one
@@ -180,4 +191,45 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
 
     return "TABLE_NAME in (" + queryBuilder.toString() + ")";
   }
+
+  private TableInformation getTableInformation(Connection connection, String tableName) throws SQLException {
+
+    ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+      "SELECT * FROM %s WHERE 1 = 0", tableName));
+
+    Map<String, Integer> sqlTypes = getSQLTypes(resultSet.getMetaData());
+
+    List<Schema.Field> schemaFields = DBUtils.getSchemaFields(resultSet);
+    List<String> primaryKeys = getPrimaryKeys(connection, tableName);
+
+    return new TableInformation(sqlTypes, primaryKeys, schemaFields);
+
+  }
+
+  // DO not remove this as its needed to get BLOB and other complex field types
+  private Map<String, Integer> getSQLTypes(ResultSetMetaData metadata) throws SQLException {
+    Map<String, Integer> fieldTypes = new HashMap<>();
+
+    int columnCount = metadata.getColumnCount();
+    for (int i = 1; i <= columnCount; i++) {
+      String name = metadata.getColumnLabel(i);
+      int type = metadata.getColumnType(i);
+      fieldTypes.put(name, type);
+    }
+    return fieldTypes;
+  }
+
+
+  private List<String> getPrimaryKeys(Connection connection, String tableName) throws SQLException {
+    List<String> keys = new ArrayList<>();
+    ResultSet resultSet = connection.createStatement().executeQuery(String.format(
+      "SELECT column_name FROM all_cons_columns WHERE constraint_name = (" +
+        "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER('%s') " +
+        "AND CONSTRAINT_TYPE = 'P')", tableName));
+    while (resultSet.next()) {
+      keys.add(resultSet.getString(1));
+    }
+    return keys;
+  }
 }
+

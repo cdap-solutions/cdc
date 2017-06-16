@@ -18,18 +18,14 @@ package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
-import co.cask.hydrator.plugin.DBUtils;
 import scala.Serializable;
 import scala.runtime.AbstractFunction1;
 
-import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * A serializable class to allow invoking {@link scala.Function1} from Java. The function converts {@link ResultSet}
@@ -40,15 +36,15 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   private static final Schema.Field PRIMARY_KEYS_FIELD = Schema.Field.of("primary_keys", Schema.arrayOf(Schema.of(Schema.Type.STRING)));
   private static final Schema.Field OP_TYPE_FIELD = Schema.Field.of("op_type", Schema.of(Schema.Type.STRING));
 
-  private final OracleServerConnection dbConnection;
+  private final Map<String, TableInformation> tableInformations;
 
   public static final String RECORD_NAME = "DMLRecord";
   private final SQLParser sqlParser = new SQLParser();
 
-
-  public ResultSetToDMLRecord(String connectionUrl, String username, String password) {
-    this.dbConnection = new OracleServerConnection(connectionUrl, username, password);
+  public ResultSetToDMLRecord(Map<String, TableInformation> tableInformations) {
+    this.tableInformations = tableInformations;
   }
+
 
   public StructuredRecord apply(ResultSet row) {
     try {
@@ -66,9 +62,8 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     StructuredRecord.Builder recordBuilder = StructuredRecord.builder(dmlSchema);
     // TODO: sink expects schema.tablename
 
-    List<String> primaryKeys = getPrimaryKeys(tableName);
     recordBuilder.set(TABLE_FIELD.getName(), "USER." + tableName);
-    recordBuilder.set(PRIMARY_KEYS_FIELD.getName(), primaryKeys);
+    recordBuilder.set(PRIMARY_KEYS_FIELD.getName(), tableInformations.get(tableName).getPrimaryKeys());
     recordBuilder.set(OP_TYPE_FIELD.getName(), getOpType(resultSet.getString("OPERATION")));
     return getChangeData(resultSet, changeSchema, recordBuilder);
   }
@@ -116,44 +111,8 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   }
 
   private Schema getChangeSchema(String tableName) throws SQLException {
-    return Schema.recordOf("rec", getFieldList(tableName));
+    return Schema.recordOf("rec", tableInformations.get(tableName).getSchemaFields());
   }
 
-  private List<Schema.Field> getFieldList(String tableName) throws SQLException {
-    try (Connection connection = dbConnection.apply()) {
-      ResultSet resultSet = connection.createStatement().executeQuery(String.format(
-        "SELECT * FROM %s WHERE 1 = 0", tableName));
-      return DBUtils.getSchemaFields(resultSet);
-    }
-  }
 
-  // DO not remove this as its needed to get BLOB and other complex field types
-  private Map<String, Integer> getTableFields(String tableName, OracleServerConnection dbConnection) throws SQLException {
-    try (Connection connection = dbConnection.apply()) {
-      ResultSet resultSet = connection.createStatement().executeQuery(String.format(
-        "SELECT * FROM %s WHERE 1 = 0", tableName));
-      Map<String, Integer> fieldTypes = new HashMap<>();
-      int columnCount = resultSet.getMetaData().getColumnCount();
-      for (int i = 1; i <= columnCount; i++) {
-        String name = resultSet.getMetaData().getColumnLabel(i);
-        int type = resultSet.getMetaData().getColumnType(i);
-        fieldTypes.put(name, type);
-      }
-      return fieldTypes;
-    }
-  }
-
-  private List<String> getPrimaryKeys(String tableName) throws SQLException {
-    try (Connection connection = dbConnection.apply()) {
-      List<String> keys = new ArrayList<>();
-      ResultSet resultSet = connection.createStatement().executeQuery(String.format(
-        "SELECT column_name FROM all_cons_columns WHERE constraint_name = (" +
-          "SELECT constraint_name FROM user_constraints WHERE UPPER(table_name) = UPPER('%s') " +
-          "AND CONSTRAINT_TYPE = 'P')", tableName));
-      while (resultSet.next()) {
-        keys.add(resultSet.getString(1));
-      }
-      return keys;
-    }
-  }
 }
