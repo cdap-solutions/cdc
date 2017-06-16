@@ -112,11 +112,12 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
              Admin hBaseAdmin = connection.getAdmin()) {
           while (structuredRecordIterator.hasNext()) {
             StructuredRecord input = structuredRecordIterator.next();
-            LOG.debug("Received StructuredRecord in Kudu {}", StructuredRecordStringConverter.toJsonString(input));
+            LOG.info("Received StructuredRecord in Kudu {}", StructuredRecordStringConverter.toJsonString(input));
             String tableName = getTableName((String) input.get("table"));
             if (input.getSchema().getRecordName().equals("DDLRecord")) {
               createHBaseTable(hBaseAdmin, tableName);
             } else {
+              createHBaseTable(hBaseAdmin, tableName);
               Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf(tableName));
               updateHBaseTable(table, input);
             }

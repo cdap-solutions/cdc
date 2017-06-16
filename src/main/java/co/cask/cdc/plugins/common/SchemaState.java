@@ -1,8 +1,8 @@
 package co.cask.cdc.plugins.common;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
-import com.google.common.base.Optional;
 import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFunction;
