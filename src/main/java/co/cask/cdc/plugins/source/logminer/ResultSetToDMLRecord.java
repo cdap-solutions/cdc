@@ -45,8 +45,9 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   public static final String RECORD_NAME = "DMLRecord";
   private final SQLParser sqlParser = new SQLParser();
 
-  public ResultSetToDMLRecord(OracleServerConnection dbConnection) {
-    this.dbConnection = dbConnection;
+
+  public ResultSetToDMLRecord(String connectionUrl, String username, String password) {
+    this.dbConnection = new OracleServerConnection(connectionUrl, username, password);
   }
 
   public StructuredRecord apply(ResultSet row) {

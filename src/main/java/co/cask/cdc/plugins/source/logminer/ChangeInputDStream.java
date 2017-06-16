@@ -44,27 +44,27 @@ import java.util.Set;
 public class ChangeInputDStream extends InputDStream<StructuredRecord> {
   private static final Logger LOG = LoggerFactory.getLogger(ChangeInputDStream.class);
   private ClassTag<StructuredRecord> tag;
-  private String connection;
+  private String connectionUrl;
   private String username;
   private String password;
   private Set<String> trackedTables;
-  private OracleServerConnection dbConnection;
+  //  private OracleServerConnection dbConnection;
   private long commitSCN;
 
-  ChangeInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
+  ChangeInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connectionUrl, String username,
                      String password, Set<String> trackedTables, long commitSCN) {
     super(ssc, tag);
     this.tag = tag;
-    this.connection = connection;
+    this.connectionUrl = connectionUrl;
     this.username = username;
     this.password = password;
     this.trackedTables = trackedTables;
     this.commitSCN = commitSCN;
   }
 
-  ChangeInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connection, String username,
+  ChangeInputDStream(StreamingContext ssc, ClassTag<StructuredRecord> tag, String connectionUrl, String username,
                      String password, Set<String> trackedTables) {
-    this(ssc, tag, connection, username, password, trackedTables, 0);
+    this(ssc, tag, connectionUrl, username, password, trackedTables, 0);
   }
 
   @Override
@@ -82,7 +82,8 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
 
     try {
       long prev = commitSCN;
-      long cur = getCurrentCommitSCN(dbConnection);
+      OracleServerConnection connection = new OracleServerConnection(this.connectionUrl, username, password, true);
+      long cur = getCurrentCommitSCN(connection);
       if (prev != cur) {
         JdbcRDD<StructuredRecord> rdd = queryLogMinerViewContent(prev, cur);
         changeRDDs.add(rdd);
@@ -119,7 +120,7 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
 
   @Override
   public void start() {
-    dbConnection = new OracleServerConnection(connection, username, password);
+//    dbConnection = new OracleServerConnection(connectionUrl, username, password);
   }
 
   @Override
@@ -142,8 +143,8 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     LOG.info("Querying for change data with statement {}", stmt);
 
     //TODO Currently we are not partitioning the data. We should partition it for scalability
-    return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, 1, 1, 1,
-                         new ResultSetToDMLRecord(dbConnection),
+    return new JdbcRDD<>(ssc().sc(), new OracleServerConnection(connectionUrl, username, password, true), stmt, 1, 1, 1,
+                         new ResultSetToDMLRecord(connectionUrl, username, password),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
     // Set the given SCN or find out the last one used or get the latest one.
     // SELECT CURRENT_SCN FROM V$DATABASE; --> to get the latest one
@@ -162,7 +163,7 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
     String stmt = String.format("SELECT * FROM %s WHERE ROWNUM = 1 AND ?=?", tableName);
     LOG.info("Querying with {}", stmt);
 
-    return new JdbcRDD<>(ssc().sc(), dbConnection, stmt, 1, 1, 1,
+    return new JdbcRDD<>(ssc().sc(), new OracleServerConnection(connectionUrl, username, password), stmt, 1, 1, 1,
                          new ResultSetToDDLRecord("USER", tableName),
                          ClassManifestFactory$.MODULE$.fromClass(StructuredRecord.class));
   }

@@ -29,6 +29,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A class which can provide a {@link Connection} using {@link OracleDriver} which is
@@ -37,14 +38,21 @@ import java.util.Properties;
  * to manage/close the connection.
  */
 class OracleServerConnection extends AbstractFunction0<Connection> implements Serializable {
+  private static int count = 0;
   private String connectionUrl;
   private String userName;
   private String password;
+  private boolean enableLogMiner;
 
-  OracleServerConnection(String connectionUrl, String userName, String password) {
+  OracleServerConnection(String connectionUrl, String userName, String password, boolean enableLogMiner) {
     this.connectionUrl = connectionUrl;
     this.userName = userName;
     this.password = password;
+    this.enableLogMiner = enableLogMiner;
+  }
+
+  OracleServerConnection(String connectionUrl, String userName, String password) {
+    this(connectionUrl, userName, password, false);
   }
 
   @Override
@@ -54,9 +62,13 @@ class OracleServerConnection extends AbstractFunction0<Connection> implements Se
       Properties properties = new Properties();
       properties.setProperty("user", userName);
       properties.setProperty("password", password);
+      System.out.println("### Hash is " +  System.identityHashCode(this));
+      System.out.println("### Apply called " +  ++count);
       Connection connection = DriverManager.getConnection(connectionUrl, properties);
       // this might not be here. debugging....
-      setUpLogMiner(connection);
+      if (enableLogMiner) {
+        setUpLogMiner(connection);
+      }
       return connection;
     } catch (Exception e) {
       throw Throwables.propagate(e);
