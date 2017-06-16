@@ -1,8 +1,8 @@
 package co.cask.cdc.plugins.common;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
-import com.google.common.base.Optional;
 import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.Optional;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function3;
 import org.apache.spark.api.java.function.PairFunction;
@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 import java.io.Serializable;
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -34,6 +35,7 @@ public class SchemaState implements Serializable {
           return new Tuple2<>("", structuredRecord);
         }
       });
+
 
     // map the dstream with schema state store to detect changes in schema
     JavaMapWithStateDStream<String, StructuredRecord, Map<String, String>,

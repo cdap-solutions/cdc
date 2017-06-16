@@ -101,6 +101,7 @@ public class ChangeInputDStream extends InputDStream<StructuredRecord> {
         changeRDDs.add(rdd);
         commitSCN = cur;
       } else {
+
         changeRDDs.add(ssc().sc().emptyRDD(tag));
       }
 
