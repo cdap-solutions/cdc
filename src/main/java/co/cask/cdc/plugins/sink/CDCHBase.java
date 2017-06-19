@@ -16,11 +16,14 @@
 
 package co.cask.cdc.plugins.sink;
 
+import co.cask.cdap.api.annotation.Description;
+import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.common.Bytes;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
+import co.cask.cdap.etl.api.PipelineConfigurer;
 import co.cask.cdap.etl.api.batch.SparkExecutionPluginContext;
 import co.cask.cdap.etl.api.batch.SparkPluginContext;
 import co.cask.cdap.etl.api.batch.SparkSink;
@@ -70,7 +73,9 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
   }
 
   @Override
-  public void prepareRun(SparkPluginContext context) throws Exception { return; }
+  public void prepareRun(SparkPluginContext context) throws Exception {
+    // no-op
+  }
 
   @Override
   public void run(SparkExecutionPluginContext context, JavaRDD<StructuredRecord> javaRDD) throws Exception {
@@ -113,12 +118,12 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
           while (structuredRecordIterator.hasNext()) {
             StructuredRecord input = structuredRecordIterator.next();
             LOG.info("Received StructuredRecord in Kudu {}", StructuredRecordStringConverter.toJsonString(input));
-            String tableName = getTableName((String) input.get("table"));
+            TableName tableName = getTableName((String) input.get("table"));
             if (input.getSchema().getRecordName().equals("DDLRecord")) {
               createHBaseTable(hBaseAdmin, tableName);
             } else {
               createHBaseTable(hBaseAdmin, tableName);
-              Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf(tableName));
+              Table table = hBaseAdmin.getConnection().getTable(tableName);
               updateHBaseTable(table, input);
             }
           }
@@ -127,14 +132,19 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
     });
   }
 
+  private TableName getTableName(String namespacedTableName) {
+    // We do not consider the name of the namespace from the input schema but take it from config.
+    String qualifier = namespacedTableName.split("\\.")[1];
+    if (config.getNamespace() == null) {
+      return TableName.valueOf(qualifier);
+    }
 
-  private String getTableName(String namespacedTableName) {
-    return namespacedTableName.split("\\.")[1];
+    return TableName.valueOf(config.namespace, qualifier);
   }
 
-  private void createHBaseTable(Admin admin, String tableName) throws IOException {
-    if (!admin.tableExists(TableName.valueOf(tableName))) {
-      HTableDescriptor descriptor = new HTableDescriptor(TableName.valueOf(tableName));
+  private void createHBaseTable(Admin admin, TableName tableName) throws IOException {
+    if (!admin.tableExists(tableName)) {
+      HTableDescriptor descriptor = new HTableDescriptor(tableName);
       descriptor.addFamily(new HColumnDescriptor(CDC_COLUMN_FAMILY));
       LOG.debug("Creating HBase table {}.", tableName);
       admin.createTable(descriptor);
@@ -232,8 +242,20 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
   }
 
   public static class CDCHBaseConfig extends ReferencePluginConfig {
+    @Name("namespace")
+    @Description("Name of the namespace in which HBase tables will be created. Namespace must exists in the HBase. " +
+      "Defaults to 'default' namespace.")
+    @Nullable
+    @Macro
+    public String namespace;
+
     public CDCHBaseConfig(String referenceName) {
       super(referenceName);
+    }
+
+    @Nullable
+    public String getNamespace() {
+      return namespace;
     }
   }
 }
