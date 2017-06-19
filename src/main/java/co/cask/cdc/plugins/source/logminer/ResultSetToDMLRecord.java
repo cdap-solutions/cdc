@@ -18,11 +18,16 @@ package co.cask.cdc.plugins.source.logminer;
 
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.api.data.schema.Schema;
+import oracle.jdbc.rowset.OracleSerialBlob;
+import oracle.jdbc.rowset.OracleSerialClob;
 import scala.Serializable;
 import scala.runtime.AbstractFunction1;
 
+import java.sql.Blob;
+import java.sql.Clob;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +70,7 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
     recordBuilder.set(TABLE_FIELD.getName(), "USER." + tableName);
     recordBuilder.set(PRIMARY_KEYS_FIELD.getName(), tableInformations.get(tableName).getPrimaryKeys());
     recordBuilder.set(OP_TYPE_FIELD.getName(), getOpType(resultSet.getString("OPERATION")));
-    return getChangeData(resultSet, changeSchema, recordBuilder);
+    return getChangeData(resultSet, changeSchema, tableInformations.get(tableName).getTableFields(), recordBuilder);
   }
 
   private String getOpType(String fromDB) {
@@ -84,6 +89,7 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
   }
 
   private StructuredRecord getChangeData(ResultSet resultSet, Schema changeSchema,
+                                         Map<String, Integer> tableFields,
                                          StructuredRecord.Builder recordBuilder) throws Exception {
     StructuredRecord.Builder changeRecordBuilder = StructuredRecord.builder(changeSchema);
 
@@ -94,11 +100,40 @@ public class ResultSetToDMLRecord extends AbstractFunction1<ResultSet, Structure
       String fieldName = changeSchema.getFields().get(i).getName();
       // all the values have '' so get rid of them
       // TODO: Convert and set will not support BLOB and CLOB. Change this to the one in Databaset
-      changeRecordBuilder.convertAndSet(fieldName, dataFields.get(fieldName).replaceAll("^'|'$", ""));
+//      changeRecordBuilder.convertAndSet(fieldName, dataFields.get(fieldName).replaceAll("^'|'$", ""));
+      changeRecordBuilder.set(fieldName, transformValue(tableFields.get(fieldName), dataFields.get(fieldName)
+        .replaceAll("^'|'$", "")));
     }
     StructuredRecord changeRecord = changeRecordBuilder.build();
     recordBuilder.set("change", changeRecord);
     return recordBuilder.build();
+  }
+
+
+  private Object transformValue(Integer sqlColumnType, String original) throws SQLException {
+    System.out.println("### Parsing value: " + original);
+    switch (sqlColumnType) {
+      case Types.SMALLINT:
+      case Types.TINYINT:
+        return Integer.valueOf(original);
+      case Types.NUMERIC:
+      case Types.DECIMAL:
+        return Double.valueOf(original);
+      case Types.DATE:
+        return Long.valueOf(original);
+      case Types.TIME:
+        return Long.valueOf(original);
+      case Types.TIMESTAMP:
+        return Long.valueOf(original);
+      case Types.BLOB:
+        Blob blob = new OracleSerialBlob(original.getBytes());
+        return blob.getBytes(1, (int) blob.length());
+      case Types.CLOB:
+        Clob oracleClob = new OracleSerialClob(original.toCharArray());
+        return oracleClob.getSubString(1, (int) oracleClob.length());
+      default:
+        return original;
+    }
   }
 
   private Schema getDMLSchema(String tableName) throws SQLException {
