@@ -42,6 +42,10 @@ public class SQLParser implements Serializable {
       List<String> values = new ArrayList<>();
       List<SqlNode> valueList = ((SqlBasicCall) ((SqlBasicCall) sqlInsert.getOperandList().get(2)).getOperandList().get(0)).getOperandList();
       for (SqlNode value : valueList) {
+        if (!(value instanceof SqlCharStringLiteral)) {
+          throw new RuntimeException("Failed to process insert record. It is possible that DDL change happened and " +
+                                       "the dictionary is not updated.");
+        }
         SqlCharStringLiteral literal = (SqlCharStringLiteral) value;
         values.add(literal.getValue().toString());
       }
