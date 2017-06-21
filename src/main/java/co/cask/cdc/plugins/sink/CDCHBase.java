@@ -70,7 +70,9 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
   }
 
   @Override
-  public void prepareRun(SparkPluginContext context) throws Exception { return; }
+  public void prepareRun(SparkPluginContext context) throws Exception {
+    // no-op
+  }
 
   @Override
   public void run(SparkExecutionPluginContext context, JavaRDD<StructuredRecord> javaRDD) throws Exception {
@@ -125,7 +127,6 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
       }
     });
   }
-
 
   private String getTableName(String namespacedTableName) {
     return namespacedTableName.split("\\.")[1];
@@ -218,12 +219,10 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
           setPutField(put, field, change.get(field.getName()));
         }
         table.put(put);
-        LOG.info("XXX Putting row {}", Bytes.toString(getRowKey(primaryKeys, change)));
         break;
       case "D":
         Delete delete = new Delete(getRowKey(primaryKeys, change));
         table.delete(delete);
-        LOG.info("XXX Deleting row {}", Bytes.toString(getRowKey(primaryKeys, change)));
         break;
       default:
         LOG.warn(String.format("Operation of type '%s' will be ignored.", operationType));

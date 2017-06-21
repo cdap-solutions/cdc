@@ -2,8 +2,8 @@ CDC HBase Sink
 ==============
 
 CDAP plugin for storing the changed data into HBase. This plugin can be used with
-either **[CDC Database Source](CDCDatabase-source.md)** or **[ChangeTrackingSQLServer Source](ChangeTrackingSQLServer.md)**
-plugin for reading the changes from Oracle or SQLServer databases respectively.
+either `CDC Database Source` or `ChangeTrackingSQLServer Source` plugin for reading the changes
+from Oracle or SQLServer databases respectively.
 
 Usage Notes
 -----------

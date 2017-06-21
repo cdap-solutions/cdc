@@ -20,7 +20,7 @@
   <groupId>co.cask.cdc</groupId>
   <artifactId>cask-cdc</artifactId>
   <packaging>jar</packaging>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
   <name>cask-cdc</name>
 
   <licenses>
@@ -63,8 +63,8 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <cdap.version>4.2.0-SNAPSHOT</cdap.version>
-    <hydrator.version>1.7.0-SNAPSHOT</hydrator.version>
+    <cdap.version>4.2.0</cdap.version>
+    <hydrator.version>1.7.0</hydrator.version>
     <spark.version>1.6.1</spark.version>
     <commons.version>1.2</commons.version>
     <avro.version>1.8.1</avro.version>

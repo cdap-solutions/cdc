@@ -2,7 +2,7 @@ CDC Kudu Sink
 =============
 
 CDAP plugin for storing the changed data into Kudu table. This plugin can be used with
-either **[CDC Database Source](CDCDatabase-source.md)** or **[ChangeTrackingSQLServer Source](Ch)** plugin for
+either `CDC Database Source` or `ChangeTrackingSQLServer Source` plugin for
 reading the changes from Oracle or SQLServer databases respectively.
 
 Usage Notes
@@ -10,7 +10,7 @@ Usage Notes
 The plugin accepts the DDL and DML records from the source plugin to which it is connected to. If the table does not
 exists in the Kudu cluster, it will be created. DDL operations such as `add column` or `remove column` will
 result in the corresponding schema changes in the Kudu table. DML operations such as `Insert`, `Update`, or `Delete`
-results into corresponding changes in the records in Kudu table.
+results into updates of the corresponding record in the Kudu table.
 
 Plugin Configuration
 --------------------

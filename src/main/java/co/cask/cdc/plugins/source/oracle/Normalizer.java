@@ -147,7 +147,6 @@ public class Normalizer {
   }
 
   private List<StructuredRecord> getNormalizedDMLRecord(StructuredRecord record) throws IOException {
-    LOG.info("XXX Record before normalizing is {}", StructuredRecordStringConverter.toJsonString(record));
     List<StructuredRecord> normalizedRecords = new ArrayList<>();
     // This table name contains "." in it already
     String tableName = record.get("table");
@@ -180,11 +179,11 @@ public class Normalizer {
           if (!field.getName().endsWith("_isMissing")) {
             String fieldName = field.getName();
             if (!((boolean) afterUpdateRecord.get(fieldName + "_isMissing"))) {
-              LOG.info("XXX Adding after field {}, {}", field.getName(), afterUpdateRecord.get(field.getName()));
+              LOG.debug("Adding after field {}, {}", field.getName(), afterUpdateRecord.get(field.getName()));
               suppliedFieldValues.put(field, afterUpdateRecord.get(field.getName()));
             } else {
               // Field is not updated, use the field value from the before record
-              LOG.info("XXX Adding before field {}, {}", field.getName(), beforeUpdateRecord.get(field.getName()));
+              LOG.debug("Adding before field {}, {}", field.getName(), beforeUpdateRecord.get(field.getName()));
               suppliedFieldValues.put(field, beforeUpdateRecord.get(field.getName()));
             }
           }

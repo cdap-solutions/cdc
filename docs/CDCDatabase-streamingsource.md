@@ -9,6 +9,7 @@ Usage Notes
 The plugin is configured to pull the changes from the Kafka topic to which Oracle GoldenGate pushes the change schema
 and data. Note that the kafka topic should have one partition and GoldenGate should be configured to emit the schema as
 well as data to the same topic. This guarantees the ordering of the events as they occurs in the source database.
+This plugin can be used along with CDC sink plugins such as `CDC Kudu`, and `CDC HBase`.
 
 
 Plugin Configuration
