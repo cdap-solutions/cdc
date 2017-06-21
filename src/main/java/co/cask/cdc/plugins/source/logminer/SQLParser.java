@@ -10,6 +10,8 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlUpdate;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.util.NlsString;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -22,6 +24,8 @@ import java.util.Map;
  *
  */
 public class SQLParser implements Serializable {
+
+  private static final Logger LOG = LoggerFactory.getLogger(SQLParser.class);
 
   public Map<String, String> parseSQL(String sqlQuery) throws Exception {
     Map<String, String> dmlFields = new HashMap<>();
@@ -43,8 +47,9 @@ public class SQLParser implements Serializable {
       List<SqlNode> valueList = ((SqlBasicCall) ((SqlBasicCall) sqlInsert.getOperandList().get(2)).getOperandList().get(0)).getOperandList();
       for (SqlNode value : valueList) {
         if (!(value instanceof SqlCharStringLiteral)) {
-          throw new RuntimeException("Failed to process insert record. It is possible that DDL change happened and " +
-                                       "the dictionary is not updated.");
+          LOG.info("Node {} is not an instance of SqlCharStringLiteral. It is possible that the schema of the table " +
+                     "has changed and the dictionary is old. Skipping this record.");
+          continue;
         }
         SqlCharStringLiteral literal = (SqlCharStringLiteral) value;
         values.add(literal.getValue().toString());
