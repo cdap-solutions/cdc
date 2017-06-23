@@ -29,10 +29,10 @@ public class SQLParserTest {
   @Test
   public void testSimpleQueryParsing() throws Exception {
     List<String> sqlQueries = new ArrayList<>();
-//    sqlQueries.add("insert into \"GGTEST\".\"COMPANY\"(\"ID\",\"NAME\",\"ZIPCODE\",\"CITY\",\"DESCR\") values ('98','MyCompany','23423','Somewhere','SomeDesc')");
-//    sqlQueries.add("delete from \"GGTEST\".\"COMPANY\" where \"ID\" = '20' and \"NAME\" = 'Nike' and \"ZIPCODE\" = '95131' and \"CITY\" = 'San Jose' and \"DESCR\" IS NULL and ROWID = 'AAAWuzAAGAAAAIvAAF'");
-//    sqlQueries.add("update \"GGTEST\".\"COMPANY\" set \"ZIPCODE\" = '95055' where \"ID\" = '19' and \"NAME\" = 'Starbucks' and \"ZIPCODE\" = '95054' and \"CITY\" = 'Santa Clara' and \"DESCR\" IS NULL and ROWID = 'AAAWuzAAGAAAAIvAAE'");
-    sqlQueries.add("alter session customers add another_customer_address varchar2(50)");
+    sqlQueries.add("insert into \"GGTEST\".\"COMPANY\"(\"ID\",\"NAME\",\"ZIPCODE\",\"CITY\",\"DESCR\") values ('98','MyCompany','23423','Somewhere','SomeDesc')");
+    sqlQueries.add("delete from \"GGTEST\".\"COMPANY\" where \"ID\" = '20' and \"NAME\" = 'Nike' and \"ZIPCODE\" = '95131' and \"CITY\" = 'San Jose' and \"DESCR\" IS NULL and ROWID = 'AAAWuzAAGAAAAIvAAF'");
+    sqlQueries.add("update \"GGTEST\".\"COMPANY\" set \"ZIPCODE\" = '95055' where \"ID\" = '19' and \"NAME\" = 'Starbucks' and \"ZIPCODE\" = '95054' and \"CITY\" = 'Santa Clara' and \"DESCR\" IS NULL and ROWID = 'AAAWuzAAGAAAAIvAAE'");
+//    sqlQueries.add("alter session customers add another_customer_address varchar2(50)");
 
     SQLParser sqlParser = new SQLParser();
     for (String query : sqlQueries) {
