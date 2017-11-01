@@ -50,6 +50,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
@@ -155,8 +156,20 @@ public class GoldenGateKafka extends ReferenceStreamingSource<StructuredRecord> 
         }
 
         StructuredRecord input = value.get();
-        byte[] message = input.get("message");
-        String messageBody = new String(message, StandardCharsets.UTF_8);
+        Object message = input.get("message");
+
+        byte[] messageBytes;
+        if (message instanceof ByteBuffer) {
+          ByteBuffer bb = (ByteBuffer) message;
+          messageBytes = new byte[bb.remaining()];
+          bb.mark();
+          bb.get(messageBytes);
+          bb.reset();
+        } else {
+          messageBytes = (byte[]) message;
+        }
+
+        String messageBody = new String(messageBytes, StandardCharsets.UTF_8);
 
         if (messageBody.contains("generic_wrapper") && messageBody.contains("oracle.goldengate")) {
           StructuredRecord.Builder builder = StructuredRecord.builder(GENERIC_WRAPPER_SCHEMA_MESSAGE);

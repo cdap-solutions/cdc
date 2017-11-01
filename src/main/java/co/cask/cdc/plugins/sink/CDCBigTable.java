@@ -16,28 +16,23 @@
 
 package co.cask.cdc.plugins.sink;
 
+import co.cask.cdap.api.annotation.Description;
+import co.cask.cdap.api.annotation.Macro;
 import co.cask.cdap.api.annotation.Name;
 import co.cask.cdap.api.annotation.Plugin;
-import co.cask.cdap.api.common.Bytes;
 import co.cask.cdap.api.data.format.StructuredRecord;
-import co.cask.cdap.api.data.schema.Schema;
 import co.cask.cdap.etl.api.batch.SparkExecutionPluginContext;
 import co.cask.cdap.etl.api.batch.SparkPluginContext;
 import co.cask.cdap.etl.api.batch.SparkSink;
 import co.cask.cdap.format.StructuredRecordStringConverter;
 import co.cask.hydrator.common.ReferencePluginConfig;
 import co.cask.hydrator.common.batch.JobUtils;
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
+import com.google.cloud.bigtable.hbase.BigtableConfiguration;
+import com.google.cloud.bigtable.hbase.BigtableOptionsFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
-import org.apache.hadoop.hbase.client.ConnectionFactory;
-import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.spark.api.java.JavaRDD;
@@ -45,31 +40,27 @@ import org.apache.spark.api.java.function.VoidFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
-import javax.annotation.Nullable;
 
 /**
- * HBase sink for CDC
+ * BigTable sink for CDC
  */
 @Plugin(type = SparkSink.PLUGIN_TYPE)
-@Name("CDCHBase")
-public class CDCHBase extends SparkSink<StructuredRecord> {
-  private static final Logger LOG = LoggerFactory.getLogger(CDCHBase.class);
-  private final CDCHBaseConfig config;
+@Name("CDCBigTable")
+public class CDCBigTable extends SparkSink<StructuredRecord> {
+  private static final Logger LOG = LoggerFactory.getLogger(CDCBigTable.class);
 
-  public CDCHBase(CDCHBaseConfig config) {
+  private final CDCBigTableConfig config;
+
+  public CDCBigTable(CDCBigTableConfig config) {
     this.config = config;
   }
 
   @Override
   public void prepareRun(SparkPluginContext context) throws Exception { }
+
 
   @Override
   public void run(SparkExecutionPluginContext context, JavaRDD<StructuredRecord> javaRDD) throws Exception {
@@ -88,6 +79,7 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
       public void call(Iterator<StructuredRecord> structuredRecordIterator) throws Exception {
 
         Job job;
+        Connection connection;
         ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
         // Switch the context classloader to plugin class' classloader (PluginClassLoader) so that
         // when Job/Configuration is created, it uses PluginClassLoader to load resources (hbase-default.xml)
@@ -96,24 +88,36 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
         Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
         try {
           job = JobUtils.createInstance();
+
+          Configuration conf = job.getConfiguration();
+
+          for (Map.Entry<String, String> configEntry : configs.entrySet()) {
+            conf.set(configEntry.getKey(), configEntry.getValue());
+          }
+
+          BigtableConfiguration.configure(conf, config.project, config.instance);
+          conf.set(BigtableOptionsFactory.BIGTABLE_SERVICE_ACCOUNT_JSON_KEYFILE_LOCATION_KEY,
+                   config.serviceAccountFilePath);
+
+          connection = BigtableConfiguration.connect(conf);
+
         } finally {
           // Switch back to the original
           Thread.currentThread().setContextClassLoader(oldClassLoader);
         }
 
-        Configuration conf = job.getConfiguration();
-
-        for(Map.Entry<String, String> configEntry : configs.entrySet()) {
-          conf.set(configEntry.getKey(), configEntry.getValue());
-        }
-
-        try (Connection connection = ConnectionFactory.createConnection(conf);
-             Admin hBaseAdmin = connection.getAdmin()) {
+        try (Connection conn = connection;
+             Admin hBaseAdmin = conn.getAdmin()) {
           while (structuredRecordIterator.hasNext()) {
             StructuredRecord input = structuredRecordIterator.next();
-            LOG.debug("Received StructuredRecord in Kudu {}", StructuredRecordStringConverter.toJsonString(input));
-            String tableName = getTableName((String) input.get("table"));
+            LOG.debug("Received StructuredRecord {}", StructuredRecordStringConverter.toJsonString(input));
+            String tableName = CDCHBase.getTableName((String) input.get("table"));
             if (input.getSchema().getRecordName().equals("DDLRecord")) {
+              LOG.info("Creating table {}", tableName);
+              // Notes: In BigTable, there no such thing as namespace. Dots are allowed in table names, but colons are not.
+              // If you try a table name with a colon in it, you will get:
+              // io.grpc.StatusRuntimeException: INVALID_ARGUMENT: Invalid id for collection tables : \
+              // Should match [_a-zA-Z0-9][-_.a-zA-Z0-9]* but found 'ns:abcd'
               CDCTableUtil.createHBaseTable(hBaseAdmin, tableName);
             } else {
               Table table = hBaseAdmin.getConnection().getTable(TableName.valueOf(tableName));
@@ -121,19 +125,33 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
             }
           }
         }
+
       }
     });
   }
 
 
-  public static String getTableName(String namespacedTableName) {
-    return namespacedTableName.split("\\.")[1];
-  }
+  public static class CDCBigTableConfig extends ReferencePluginConfig {
 
-  public static class CDCHBaseConfig extends ReferencePluginConfig {
-    public CDCHBaseConfig(String referenceName) {
+    @Name("instance")
+    @Description("Instance ID")
+    @Macro
+    public String instance;
+
+
+    @Name("project")
+    @Description("Project ID")
+    @Macro
+    public String project;
+
+    @Name("serviceFilePath")
+    @Description("Service Account File Path")
+    @Macro
+    public String serviceAccountFilePath;
+
+    public CDCBigTableConfig(String referenceName) {
       super(referenceName);
     }
   }
-}
 
+}
