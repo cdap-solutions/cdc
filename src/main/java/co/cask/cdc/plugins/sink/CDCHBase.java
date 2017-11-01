@@ -70,7 +70,7 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
   }
 
   @Override
-  public void prepareRun(SparkPluginContext context) throws Exception { return; }
+  public void prepareRun(SparkPluginContext context) throws Exception { }
 
   @Override
   public void run(SparkExecutionPluginContext context, JavaRDD<StructuredRecord> javaRDD) throws Exception {
