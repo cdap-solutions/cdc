@@ -63,8 +63,9 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <cdap.version>4.3.1</cdap.version>
-    <hydrator.version>1.8.1</hydrator.version>
+    <cdap.version>5.0.0-SNAPSHOT</cdap.version>
+    <hydrator.version>2.0.0-SNAPSHOT</hydrator.version>
+    <bigtable.version>1.0.0-pre3</bigtable.version>
     <spark.version>1.6.1</spark.version>
     <commons.version>1.2</commons.version>
     <avro.version>1.8.1</avro.version>
@@ -76,11 +77,27 @@
     <mssql.jdbc.version>6.1.0.jre7</mssql.jdbc.version>
     <hadoop.version>2.6.0-cdh5.10.0</hadoop.version>
     <!-- properties for script build step that creates the config files for the artifacts -->
-    <app.parents>system:cdap-data-streams[4.1.0-SNAPSHOT,5.0.0)</app.parents>
+    <app.parents>system:cdap-data-streams[4.1.0-SNAPSHOT,10.0.0)</app.parents>
     <main.basedir>${project.basedir}</main.basedir>
   </properties>
 
   <dependencies>
+    <!--<dependency>-->
+      <!--<groupId>io.netty</groupId>-->
+      <!--<artifactId>netty-tcnative-boringssl-static</artifactId>-->
+      <!--<version>1.1.33.Fork26</version>-->
+      <!--<version>1.1.33.Fork14</version>-->
+    <!--</dependency>-->
+    <dependency>
+      <groupId>com.google.cloud.bigtable</groupId>
+      <artifactId>bigtable-hbase-1.x</artifactId>
+      <version>${bigtable.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>18.0</version>
+    </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase-common</artifactId>
@@ -98,7 +115,16 @@
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-core</artifactId>
         </exclusion>
+        <exclusion>
+          <groupId>com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
+        </exclusion>
       </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-all</artifactId>
+      <version>4.1.8.Final</version>
     </dependency>
     <dependency>
       <groupId>org.apache.hbase</groupId>
@@ -108,6 +134,10 @@
         <exclusion>
           <groupId>io.netty</groupId>
           <artifactId>netty</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>io.netty</groupId>
+          <artifactId>netty-all</artifactId>
         </exclusion>
         <exclusion>
           <groupId>org.slf4j</groupId>
@@ -124,6 +154,10 @@
         <exclusion>
           <groupId>org.apache.hadoop</groupId>
           <artifactId>hadoop-annotations</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
         </exclusion>
       </exclusions>
     </dependency>
@@ -192,6 +226,10 @@
       <version>${spark.version}</version>
       <scope>provided</scope>
       <exclusions>
+        <exclusion>
+          <groupId>asm</groupId>
+          <artifactId>asm</artifactId>
+        </exclusion>
         <exclusion>
           <groupId>org.slf4j</groupId>
           <artifactId>slf4j-log4j12</artifactId>
@@ -314,12 +352,32 @@
       <artifactId>hadoop-common</artifactId>
       <version>${hadoop.version}</version>
       <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-mapreduce-client-core</artifactId>
       <version>${hadoop.version}</version>
       <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.protobuf</groupId>
+          <artifactId>protobuf-java</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.kudu</groupId>
@@ -407,6 +465,64 @@
       <artifactId>mssql-jdbc</artifactId>
       <version>${mssql.jdbc.version}</version>
     </dependency>
+
+    <!-- Test dependencies -->
+    <!-- https://mvnrepository.com/artifact/org.eclipse.jetty.alpn/alpn-api -->
+    <!--<dependency>-->
+      <!--<groupId>org.eclipse.jetty.alpn</groupId>-->
+      <!--<artifactId>alpn-api</artifactId>-->
+      <!--<version>1.0.0</version>-->
+    <!--</dependency>-->
+
+    <!--<dependency>-->
+      <!--<groupId>co.cask.cdap</groupId>-->
+      <!--<artifactId>cdap-unit-test</artifactId>-->
+      <!--<version>${cdap.version}</version>-->
+      <!--<scope>test</scope>-->
+      <!--<exclusions>-->
+        <!--<exclusion>-->
+          <!--<groupId>asm</groupId>-->
+          <!--<artifactId>asm</artifactId>-->
+        <!--</exclusion>-->
+      <!--</exclusions>-->
+    <!--</dependency>-->
+    <!--<dependency>-->
+      <!--<groupId>co.cask.cdap</groupId>-->
+      <!--<artifactId>cdap-integration-test</artifactId>-->
+      <!--<version>${cdap.version}</version>-->
+      <!--<scope>test</scope>-->
+      <!--<exclusions>-->
+        <!--<exclusion>-->
+          <!--<groupId>asm</groupId>-->
+          <!--<artifactId>asm</artifactId>-->
+        <!--</exclusion>-->
+      <!--</exclusions>-->
+    <!--</dependency>-->
+    <!--<dependency>-->
+      <!--<groupId>co.cask.cdap.test</groupId>-->
+      <!--<artifactId>integration-test</artifactId>-->
+      <!--<version>1.0.0</version>-->
+      <!--<scope>test</scope>-->
+      <!--&lt;!&ndash;<type>test-jar</type>&ndash;&gt;-->
+      <!--<exclusions>-->
+        <!--<exclusion>-->
+          <!--<groupId>asm</groupId>-->
+          <!--<artifactId>asm</artifactId>-->
+        <!--</exclusion>-->
+      <!--</exclusions>-->
+    <!--</dependency>-->
+    <dependency>
+      <groupId>co.cask.cdap</groupId>
+      <artifactId>hydrator-test</artifactId>
+      <version>${cdap.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>co.cask.cdap</groupId>
+      <artifactId>cdap-data-pipeline</artifactId>
+      <version>${cdap.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -428,10 +544,19 @@
           <extensions>true</extensions>
           <configuration>
             <instructions>
-              <_exportcontents>org.apache.hadoop.hbase;org.apache.commons.lang;
+              <_exportcontents>
+                org.apache.hadoop.hbase;org.apache.commons.lang;
                 org.apache.hadoop.hbase.mapreduce.*;
                 org.apache.hadoop.hbase.client.*;org.apache.avro.*;com.google.common.*;co.cask.*;org.apache.spark.streaming.kafka.*;
-                kafka.serializer.*;kafka.common</_exportcontents>
+                kafka.serializer.*;kafka.common;
+
+                <!--co.cask.*;-->
+
+                com.google.cloud.bigtable.grpc.BigtableSession;
+                com.google.cloud.bigtable.hbase1_x.BigtableConnection;
+                com.google.cloud.bigtable.config.BigtableOptions;
+                io.grpc.internal.DnsNameResolverProvider
+              </_exportcontents>
               <Embed-Dependency>*;inline=false;scope=compile</Embed-Dependency>
               <Embed-Transitive>true</Embed-Transitive>
               <Embed-Directory>lib</Embed-Directory>

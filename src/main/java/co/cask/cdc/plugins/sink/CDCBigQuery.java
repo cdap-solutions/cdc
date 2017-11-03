@@ -16,19 +16,17 @@
 
 package co.cask.cdc.plugins.sink;
 
+import co.cask.cdap.api.annotation.Description;
+import co.cask.cdap.api.annotation.Macro;
+import co.cask.cdap.api.annotation.Name;
+import co.cask.cdap.api.annotation.Plugin;
 import co.cask.cdap.api.data.format.StructuredRecord;
 import co.cask.cdap.etl.api.batch.SparkExecutionPluginContext;
 import co.cask.cdap.etl.api.batch.SparkPluginContext;
 import co.cask.cdap.etl.api.batch.SparkSink;
-import co.cask.cdap.format.StructuredRecordStringConverter;
 import co.cask.hydrator.common.ReferencePluginConfig;
 import co.cask.hydrator.common.batch.JobUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.client.Admin;
-import org.apache.hadoop.hbase.client.Connection;
-import org.apache.hadoop.hbase.client.ConnectionFactory;
-import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.VoidFunction;
@@ -42,6 +40,8 @@ import java.util.Map;
 /**
  * BigQuery sink for CDC
  */
+@Plugin(type = SparkSink.PLUGIN_TYPE)
+@Name("CDCBigQuery")
 public class CDCBigQuery extends SparkSink<StructuredRecord> {
   private static final Logger LOG = LoggerFactory.getLogger(CDCBigQuery.class);
 
@@ -100,6 +100,37 @@ public class CDCBigQuery extends SparkSink<StructuredRecord> {
 
 
   public static class CDCBigQueryConfig extends ReferencePluginConfig {
+
+    @Name("dataset")
+    @Description("Dataset name")
+    @Macro
+    public String dataset;
+
+    @Name("table")
+    @Description("Table to be read")
+    @Macro
+    public String table;
+
+    @Name("project")
+    @Description("Project ID")
+    @Macro
+    public String project;
+
+    @Name("bucket")
+    @Description("Temporary Google Cloud Storage bucket name. Files will be automatically cleaned after job completion.")
+    @Macro
+    public String bucket;
+
+    @Name("serviceFilePath")
+    @Description("Service Account File Path")
+    @Macro
+    public String serviceAccountFilePath;
+
+    @Name("schema")
+    @Description("Schema of the BigQuery table")
+    public String schema;
+
+    // TODO: why do we need a ctor? (except for unit tests)
     public CDCBigQueryConfig(String referenceName) {
       super(referenceName);
     }

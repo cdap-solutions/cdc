@@ -62,8 +62,8 @@ import javax.annotation.Nullable;
 @Name("CDCHBase")
 public class CDCHBase extends SparkSink<StructuredRecord> {
   private static final Logger LOG = LoggerFactory.getLogger(CDCHBase.class);
+  private static final String CDC_COLUMN_FAMILY = "cdc";
   private final CDCHBaseConfig config;
-  private final String CDC_COLUMN_FAMILY = "cdc";
 
   public CDCHBase(CDCHBaseConfig config) {
     this.config = config;
@@ -127,11 +127,11 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
   }
 
 
-  private String getTableName(String namespacedTableName) {
+  public static String getTableName(String namespacedTableName) {
     return namespacedTableName.split("\\.")[1];
   }
 
-  private void createHBaseTable(Admin admin, String tableName) throws IOException {
+  public static void createHBaseTable(Admin admin, String tableName) throws IOException {
     if (!admin.tableExists(TableName.valueOf(tableName))) {
       HTableDescriptor descriptor = new HTableDescriptor(TableName.valueOf(tableName));
       descriptor.addFamily(new HColumnDescriptor(CDC_COLUMN_FAMILY));
@@ -140,7 +140,7 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
     }
   }
 
-  private byte[] getRowKey(List<String> primaryKeys, StructuredRecord change) {
+  public static byte[] getRowKey(List<String> primaryKeys, StructuredRecord change) {
     // the primary keys are always in sorted order
     List<String> primaryValues = new ArrayList<>();
     String [] primaryKeysArray = primaryKeys.toArray(new String[primaryKeys.size()]);
@@ -153,7 +153,7 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
   }
 
   // get the non-nullable type of the field and check that it's a simple type.
-  private Schema.Type validateAndGetType(Schema.Field field) {
+  public static Schema.Type validateAndGetType(Schema.Field field) {
     Schema.Type type;
     if (field.getSchema().isNullable()) {
       type = field.getSchema().getNonNullable().getType();
@@ -165,7 +165,7 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
     return type;
   }
 
-  private void setPutField(Put put, Schema.Field field, @Nullable Object val) {
+  public static void setPutField(Put put, Schema.Field field, @Nullable Object val) {
     Schema.Type type = validateAndGetType(field);
     String column = field.getName();
     if (val == null) {
@@ -204,7 +204,7 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
     }
   }
 
-  private void updateHBaseTable(Table table, StructuredRecord input) throws Exception {
+  public static void updateHBaseTable(Table table, StructuredRecord input) throws Exception {
     String operationType = input.get("op_type");
     List<String> primaryKeys = input.get("primary_keys");
     StructuredRecord change = input.get("change");
@@ -226,7 +226,7 @@ public class CDCHBase extends SparkSink<StructuredRecord> {
         LOG.info("XXX Deleting row {}", Bytes.toString(getRowKey(primaryKeys, change)));
         break;
       default:
-        LOG.warn(String.format("Operation of type '%s' will be ignored.", operationType));
+        LOG.warn("Operation of type '{}' will be ignored.", operationType);
     }
   }
 

@@ -1,0 +1,38 @@
+{
+  "metadata": {
+    "spec-version": "1.0"
+  },
+  "TODO1": "model it after CDCBigQuery-sparksink.json",
+  "TODO2": "why do cdc sinks need to be spark sinks? Can't they be batch sinks?",
+  "configuration-groups": [
+    {
+      "label": "HBase Sink Configuration",
+      "properties": [
+        {
+          "widget-type" : "textbox",
+          "label" : "instance",
+          "name" : "instance",
+          "description" : "InstanceId TODO: better description"
+        },
+        {
+          "widget-type" : "textbox",
+          "label" : "project",
+          "name" : "project",
+          "description" : "The Project Id the Bigtable table is in."
+        },
+        {
+          "widget-type" : "textbox",
+          "label" : "serviceFilePath",
+          "name" : "serviceFilePath",
+          "description" : "Path to service account file (Local to host running on)."
+        },
+        {
+          "widget-type" : "textbox",
+          "label" : "Reference Name",
+          "name" : "referenceName",
+          "description" : "Reference specifies the name to be used to track this external source"
+        }
+      ]
+    }
+  ]
+}
