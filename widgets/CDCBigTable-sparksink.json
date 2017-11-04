@@ -3,29 +3,27 @@
     "spec-version": "1.0"
   },
   "display-name" : "CDC Bigtable Sink",
-  "TODO1": "model it (and other) after CDCBigQuery-sparksink.json",
-  "TODO2": "why do cdc sinks need to be spark sinks? Can't they be batch sinks?",
   "configuration-groups": [
     {
-      "label": "HBase Sink Configuration",
+      "label": "Google Bigtable Sink Configuration",
       "properties": [
         {
           "widget-type" : "textbox",
-          "label" : "instance",
+          "label" : "Instance Id",
           "name" : "instance",
-          "description" : "InstanceId TODO: better description"
+          "description" : "The Instance Id the Bigtable is in."
         },
         {
           "widget-type" : "textbox",
-          "label" : "project",
+          "label" : "Project Id",
           "name" : "project",
           "description" : "The Project Id the Bigtable table is in."
         },
         {
           "widget-type" : "textbox",
-          "label" : "serviceFilePath",
+          "label" : "Service Account File Path",
           "name" : "serviceFilePath",
-          "description" : "Path to service account file (Local to host running on)."
+          "description" : "Path to service account file (local to host running on)."
         },
         {
           "widget-type" : "textbox",
