@@ -2,7 +2,8 @@
   "metadata": {
     "spec-version": "1.0"
   },
-  "TODO1": "model it after CDCBigQuery-sparksink.json",
+  "display-name" : "CDC Bigtable Sink",
+  "TODO1": "model it (and other) after CDCBigQuery-sparksink.json",
   "TODO2": "why do cdc sinks need to be spark sinks? Can't they be batch sinks?",
   "configuration-groups": [
     {

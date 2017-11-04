@@ -60,7 +60,7 @@ public class Normalizer {
    * @return {@link List} of normalized records
    */
   public List<StructuredRecord> transform(StructuredRecord input) throws Exception {
-    byte[] message = input.get(INPUT_FIELD);
+    Object message = input.get(INPUT_FIELD);
     if (message == null) {
       throw new IllegalStateException(String.format("Input record does not contain the field '%s'.", INPUT_FIELD));
     }
@@ -71,7 +71,18 @@ public class Normalizer {
       return new ArrayList<>();
     }
 
-    String messageBody = new String(message, StandardCharsets.UTF_8);
+    byte[] messageBytes;
+    if (message instanceof ByteBuffer) {
+      ByteBuffer bb = (ByteBuffer) message;
+      messageBytes = new byte[bb.remaining()];
+      bb.mark();
+      bb.get(messageBytes);
+      bb.reset();
+    } else {
+      messageBytes = (byte[]) message;
+    }
+
+    String messageBody = new String(messageBytes, StandardCharsets.UTF_8);
     if (input.getSchema().getRecordName().equals("DDLRecord")) {
       JsonObject schemaObj = GSON.fromJson(messageBody, JsonObject.class);
       String namespaceName = schemaObj.get("namespace").getAsString();
@@ -89,7 +100,7 @@ public class Normalizer {
     Map<Long, String> schemaCacheMap = stateRecord.get("data");
     org.apache.avro.Schema avroGenericWrapperSchema = getGenericWrapperMessageSchema();
 
-    GenericRecord genericRecord = getRecord(message, avroGenericWrapperSchema);
+    GenericRecord genericRecord = getRecord(messageBytes, avroGenericWrapperSchema);
     String tableName = genericRecord.get("table_name").toString();
     long schameHashId = (Long) genericRecord.get("schema_fingerprint");
 

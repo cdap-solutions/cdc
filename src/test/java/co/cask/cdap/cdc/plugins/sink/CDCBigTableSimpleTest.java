@@ -20,6 +20,9 @@ import co.cask.cdc.plugins.sink.CDCBigTable;
 import com.google.cloud.bigtable.hbase.BigtableConfiguration;
 import com.google.cloud.bigtable.hbase.BigtableOptionsFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.junit.Test;
@@ -34,22 +37,18 @@ public class CDCBigTableSimpleTest {
 
   @Test
   public void test() throws IOException {
-//    BigtableOptions bigTableOptions = new BigtableOptions.Builder()
-//      .setProjectId("cask-gae-ip-geolocation")
-//      .setInstanceId("testinstance")
-//      .setUserAgent("Ali Anwar")
-//      .setCredentialOptions(CredentialOptions.jsonCredentials(CDCBigTable.CREDENTIALS))
-//      .build();
-//    BigtableSession bigtableSession = new BigtableSession(bigTableOptions);
-//    BigtableTableAdminClient tableAdminClient = bigtableSession.getTableAdminClient();
-
-
     Configuration conf = new Configuration(false);
-    BigtableConfiguration.configure(conf, CDCBigTable.PROJECT_ID, CDCBigTable.INSTANCE_ID);
-    conf.set(BigtableOptionsFactory.BIGTABLE_SERVICE_ACCOUNT_JSON_VALUE_KEY, CDCBigTable.CREDENTIALS);
+//    BigtableConfiguration.configure(conf, CDCBigTable.PROJECT_ID, CDCBigTable.INSTANCE_ID);
+//    conf.set(BigtableOptionsFactory.BIGTABLE_SERVICE_ACCOUNT_JSON_VALUE_KEY, CDCBigTable.CREDENTIALS);
     Connection connect = BigtableConfiguration.connect(conf);
     Admin admin = connect.getAdmin();
     System.out.println(Arrays.toString(admin.listTables()));
+
+
+    HTableDescriptor descriptor = new HTableDescriptor(TableName.valueOf("ali1"));
+    descriptor.addFamily(new HColumnDescriptor("q"));
+//LOG.debug("Creating HBase table {}.", tableName);
+    admin.createTable(descriptor);
   }
 
 }

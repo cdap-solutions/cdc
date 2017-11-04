@@ -100,9 +100,9 @@ public class CDCBigTableIntegrationTest extends HydratorTestBase {
 
     Map<String, String> bigTableProps = new HashMap<>();
     // CDCBigTableConfig
-    bigTableProps.put("instance", CDCBigTable.INSTANCE_ID);
-    bigTableProps.put("project", CDCBigTable.PROJECT_ID);
-    bigTableProps.put("serviceFilePath", CDCBigTable.CREDENTIALS);
+//    bigTableProps.put("instance", CDCBigTable.INSTANCE_ID);
+//    bigTableProps.put("project", CDCBigTable.PROJECT_ID);
+//    bigTableProps.put("serviceFilePath", CDCBigTable.CREDENTIALS);
     bigTableProps.put(Constants.Reference.REFERENCE_NAME, "bigtablesink");
     ETLStage sink = new ETLStage("CDCBigTable", new ETLPlugin("CDCBigTable", SparkSink.PLUGIN_TYPE, bigTableProps, null));
     ETLBatchConfig etlConfig = ETLBatchConfig.builder("* * * * *")
