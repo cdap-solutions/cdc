@@ -16,9 +16,7 @@
 
 package co.cask.cdap.cdc.plugins.sink;
 
-import co.cask.cdc.plugins.sink.CDCBigTable;
 import com.google.cloud.bigtable.hbase.BigtableConfiguration;
-import com.google.cloud.bigtable.hbase.BigtableOptionsFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -47,8 +45,8 @@ public class CDCBigTableSimpleTest {
 
     HTableDescriptor descriptor = new HTableDescriptor(TableName.valueOf("ali1"));
     descriptor.addFamily(new HColumnDescriptor("q"));
-//LOG.debug("Creating HBase table {}.", tableName);
     admin.createTable(descriptor);
+    System.out.println(Arrays.toString(admin.listTables()));
   }
 
 }

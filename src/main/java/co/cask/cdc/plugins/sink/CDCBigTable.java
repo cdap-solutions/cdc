@@ -62,7 +62,7 @@ public class CDCBigTable extends SparkSink<StructuredRecord> {
   @Override
   public void prepareRun(SparkPluginContext context) throws Exception { }
 
-
+  
 
   @Override
   public void run(SparkExecutionPluginContext context, JavaRDD<StructuredRecord> javaRDD) throws Exception {

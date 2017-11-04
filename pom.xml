@@ -546,8 +546,7 @@
                 org.apache.hadoop.hbase.client.*;org.apache.avro.*;com.google.common.*;co.cask.*;org.apache.spark.streaming.kafka.*;
                 kafka.serializer.*;kafka.common;
 
-                <!--co.cask.*;-->
-
+                <!-- Bigtable exports -->
                 com.google.cloud.bigtable.grpc.BigtableSession;
                 com.google.cloud.bigtable.hbase1_x.BigtableConnection;
                 com.google.cloud.bigtable.config.BigtableOptions;
